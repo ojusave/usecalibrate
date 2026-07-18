@@ -1,0 +1,62 @@
+{
+  "name": "@firstmile/kit",
+  "version": "0.1.0",
+  "description": "firstmile: self-hosted, position-only first-mile instrumentation kit",
+  "type": "module",
+  "main": "./dist/server.js",
+  "types": "./dist/server.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./manifest": {
+      "types": "./dist/manifest.d.ts",
+      "import": "./dist/manifest.js"
+    },
+    "./reducer": {
+      "types": "./dist/reducer.d.ts",
+      "import": "./dist/reducer.js"
+    },
+    "./snapshot": {
+      "types": "./dist/snapshot.d.ts",
+      "import": "./dist/snapshot.js"
+    },
+    "./tracker": {
+      "types": "./dist/tracker.d.ts",
+      "browser": "./dist/tracker.min.js",
+      "import": "./dist/tracker.mjs",
+      "default": "./dist/tracker.mjs"
+    },
+    "./version": {
+      "types": "./dist/version.d.ts",
+      "import": "./dist/version.js"
+    }
+  },
+  "bin": {
+    "firstmile-sidecar": "./dist/sidecar.js"
+  },
+  "files": [
+    "dist",
+    "present",
+    "README.md",
+    "SKILL.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && npm run build:tracker",
+    "build:tracker": "node ../../scripts/build-tracker.mjs",
+    "test": "cd ../.. && vitest run --config vitest.config.ts",
+    "test:watch": "cd ../.. && vitest --config vitest.config.ts"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.0.10",
+    "hono": "^4.12.30"
+  }
+}

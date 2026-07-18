@@ -1,0 +1,32 @@
+{
+  "name": "firstmile",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "firstmile monorepo: open-source first-mile user research kit",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build -ws --if-present",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p packages/kit",
+    "verify": "node scripts/verify.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.28.0",
+    "@types/node": "^22.15.21",
+    "esbuild": "^0.25.5",
+    "eslint": "^9.28.0",
+    "globals": "^16.2.0",
+    "happy-dom": "^20.11.0",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.33.0",
+    "vitest": "^3.1.4"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: firstmile-sidecar
+    runtime: node
+    plan: starter
+    buildCommand: npm ci && npm run build
+    startCommand: node packages/kit/dist/sidecar.js
+    healthCheckPath: /healthz
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: ADMIN_TOKEN
+        generateValue: true
+      - key: MANIFEST_JSON
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
+
+previews:
+  generation: automatic
+  expireAfterDays: 3

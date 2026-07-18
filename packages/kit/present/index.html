@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>firstmile live</title>
+    <style>
+      :root { color-scheme: dark; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      * { box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+      body { background: #0e1116; color: #e8e8e8; }
+      main { display: grid; grid-template-rows: auto 1fr auto; gap: 28px; height: 100vh; padding: 36px 48px 28px; }
+      .number { font-variant-numeric: tabular-nums; }
+      #stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 32px; }
+      .stat { border-top: 3px solid #34d399; padding-top: 10px; }
+      .stat.warning { border-color: #fbbf24; }
+      .stat.danger { border-color: #f87171; }
+      .stat-value { font-size: 72px; font-weight: 700; line-height: 1; }
+      .stat-label { margin-top: 8px; color: #9aa0a6; font-size: 16px; letter-spacing: .12em; text-transform: uppercase; }
+      #overview, #drilldown { min-height: 0; }
+      #overview { display: flex; align-items: stretch; }
+      #funnel { display: flex; flex: 1; align-items: stretch; min-width: 0; }
+      .column { display: flex; flex: 1 1 0; min-width: 0; flex-direction: column; align-items: center; justify-content: flex-end; }
+      .count { font-size: 56px; font-weight: 700; line-height: 1; }
+      .bar-space { display: flex; width: 72%; flex: 1; align-items: flex-end; margin: 14px 0; }
+      .bar { width: 100%; min-height: 4px; background: #34d399; }
+      .column-label { overflow: hidden; width: 100%; font-size: 18px; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+      .from-start { margin-top: 6px; color: #9aa0a6; font-size: 16px; }
+      .conversion { display: flex; width: 92px; flex: 0 0 92px; align-items: center; justify-content: center; color: #34d399; font-size: 24px; font-weight: 700; }
+      #drilldown { display: none; overflow: hidden; }
+      body.detail #overview { display: none; }
+      body.detail #drilldown { display: block; }
+      table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+      th, td { height: 28px; overflow: hidden; padding: 0 12px; border-bottom: 1px solid #252a32; font-size: 16px; text-align: right; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+      th { color: #9aa0a6; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+      th:first-child, td:first-child { width: 36%; text-align: left; }
+      footer { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 32px; }
+      #ticker { overflow: hidden; font-size: 20px; text-overflow: ellipsis; white-space: nowrap; }
+      #freshness { color: #9aa0a6; font-size: 14px; font-variant-numeric: tabular-nums; }
+      #freshness.stale, #error { color: #f87171; }
+      #error { display: none; margin-right: 16px; font-size: 14px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section id="stats" aria-label="Live totals"></section>
+      <section id="overview"><div id="funnel" aria-label="Flow funnel"></div></section>
+      <section id="drilldown" aria-label="Step drilldown"></section>
+      <footer>
+        <div id="ticker">waiting for activity</div>
+        <div><span id="error">connection lost</span><span id="freshness">connecting</span></div>
+      </footer>
+    </main>
+    <script>
+      (() => {
+        "use strict";
+        const state = { snapshot: null, ticker: 0 };
+        const stats = document.querySelector("#stats");
+        const funnel = document.querySelector("#funnel");
+        const drilldown = document.querySelector("#drilldown");
+        const ticker = document.querySelector("#ticker");
+        const freshness = document.querySelector("#freshness");
+        const error = document.querySelector("#error");
+        const node = (tag, className, text) => {
+          const element = document.createElement(tag);
+          element.className = className;
+          if (text !== undefined) element.textContent = text;
+          return element;
+        };
+        const percent = value => `${Math.round(Number(value || 0) * 100)}%`;
+        const duration = value => {
+          if (value == null) return "n/a";
+          if (value < 1000) return `${Math.round(value)}ms`;
+          return `${(value / 1000).toFixed(value < 10000 ? 1 : 0)}s`;
+        };
+        const stat = (value, label, tone = "") => {
+          const box = node("div", `stat ${tone}`);
+          box.append(node("div", "stat-value number", String(value)), node("div", "stat-label", label));
+          return box;
+        };
+        const column = (label, count, fromStart, maximum) => {
+          const box = node("div", "column");
+          const space = node("div", "bar-space");
+          const bar = node("div", "bar");
+          bar.style.height = `${maximum === 0 ? 0 : count / maximum * 100}%`;
+          space.append(bar);
+          box.append(
+            node("div", "count number", String(count)),
+            space,
+            node("div", "column-label", label),
+            node("div", "from-start number", `${fromStart} from start`)
+          );
+          return box;
+        };
+        function render(snapshot) {
+          state.snapshot = snapshot;
+          stats.replaceChildren(
+            stat(snapshot.totals.started, "Started"),
+            stat(snapshot.totals.shipped, "Shipped"),
+            stat(snapshot.totals.activeNow, "Active now"),
+            stat(duration(snapshot.medianShipMs), "Median ship", "warning")
+          );
+          const maximum = Math.max(0, snapshot.totals.started, ...snapshot.groups.map(group => group.count));
+          funnel.replaceChildren(column("started", snapshot.totals.started, "100%", maximum));
+          snapshot.groups.forEach(group => {
+            funnel.append(
+              node("div", "conversion number", `→ ${percent(group.conversionFromPrev)}`),
+              column(group.label || group.id, group.count, percent(group.conversionFromStart), maximum)
+            );
+          });
+          const table = node("table", "");
+          const head = document.createElement("thead");
+          const headRow = document.createElement("tr");
+          ["id", "count", "errors", "backFrom", "returnsTo", "median"].forEach(label => headRow.append(node("th", "", label)));
+          head.append(headRow);
+          const body = document.createElement("tbody");
+          snapshot.steps.forEach(step => {
+            const row = document.createElement("tr");
+            [step.id, step.count, step.errorCount, step.backtracksFrom, step.returnsTo, duration(step.medianMsInStep)]
+              .forEach(value => row.append(node("td", "", String(value))));
+            body.append(row);
+          });
+          table.append(head, body);
+          drilldown.replaceChildren(table);
+          updateTicker();
+        }
+        async function poll() {
+          try {
+            const response = await fetch("/api/dashboard", { cache: "no-store" });
+            if (!response.ok) throw new Error("dashboard request failed");
+            render(await response.json());
+            error.style.display = "none";
+          } catch {
+            error.style.display = "inline";
+          }
+        }
+        function updateFreshness() {
+          if (!state.snapshot) return;
+          const age = Math.max(0, (Date.now() - state.snapshot.generatedAt) / 1000);
+          freshness.textContent = `updated ${age.toFixed(1)}s ago`;
+          freshness.classList.toggle("stale", age > 5);
+        }
+        function updateTicker() {
+          const events = state.snapshot && state.snapshot.recentEvents;
+          ticker.textContent = events && events.length
+            ? events[state.ticker++ % events.length]
+            : "waiting for activity";
+        }
+        document.addEventListener("keydown", event => {
+          if (event.key.toLowerCase() === "d") document.body.classList.toggle("detail");
+        });
+        poll();
+        setInterval(poll, 1000);
+        setInterval(updateFreshness, 100);
+        setInterval(updateTicker, 3000);
+      })();
+    </script>
+  </body>
+</html>

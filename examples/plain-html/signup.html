@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#080a0f">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2346e3b7'/%3E%3Cpath d='M8 8h9a7 7 0 0 1 0 14h-3v-5h3a2 2 0 1 0 0-4H8z' fill='%23080a0f'/%3E%3C/svg%3E">
+    <title>Plain HTML signup</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { display: grid; min-height: 100vh; margin: 0; place-items: center; color: #f7f7f8; background: #080a0f; font: 16px system-ui, sans-serif; }
+      main { width: min(28rem, calc(100% - 2rem)); padding: 2rem; border: 1px solid #29303b; border-radius: 1rem; background: #11151d; }
+      h1 { margin-top: 0; }
+      [hidden] { display: none; }
+      label { display: block; margin: 1rem 0 .4rem; color: #b5bdc9; }
+      input, select, button { width: 100%; padding: .85rem; border: 1px solid #3a4352; border-radius: .5rem; color: inherit; background: #0b0e14; font: inherit; }
+      button { margin-top: 1rem; border-color: #46e3b7; color: #07110e; background: #46e3b7; font-weight: 700; cursor: pointer; }
+      small { color: #8f98a7; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section id="email">
+        <h1>Create an account</h1>
+        <small>This toy page never sends your input to firstmile.</small>
+        <form id="email-form">
+          <label for="email-input">Email</label>
+          <input id="email-input" type="email" required autocomplete="email">
+          <button>Continue</button>
+        </form>
+      </section>
+      <section id="plan" hidden>
+        <h1>Choose a plan</h1>
+        <form id="plan-form">
+          <label for="plan-input">Plan</label>
+          <select id="plan-input"><option>Starter</option><option>Team</option></select>
+          <button>Finish</button>
+        </form>
+      </section>
+      <section id="done" hidden>
+        <h1>Done</h1>
+        <p>Your toy account is ready.</p>
+      </section>
+    </main>
+    <script src="../../packages/kit/dist/tracker.min.js"></script>
+    <script>
+      // firstmile integration starts
+      const manifest = {
+        version: "plain-html-v1",
+        groups: ["signup", "select", "finish"],
+        steps: [
+          { id: "email", group: "signup" },
+          { id: "plan", group: "select" },
+          { id: "done", group: "finish" }
+        ]
+      };
+      firstmile.init({
+        endpoint: "http://localhost:8787",
+        manifest,
+        app: "plain-html"
+      }).then(() => firstmile.view("email"));
+      const show = id => {
+        document.querySelectorAll("main section").forEach(section => {
+          section.hidden = section.id !== id;
+        });
+      };
+      document.querySelector("#email-form").addEventListener("submit", event => {
+        event.preventDefault();
+        firstmile.complete("email");
+        firstmile.view("plan");
+        show("plan");
+      });
+      document.querySelector("#plan-form").addEventListener("submit", event => {
+        event.preventDefault();
+        firstmile.complete("plan");
+        firstmile.view("done");
+        firstmile.complete("done");
+        firstmile.shipped();
+        show("done");
+      });
+      // firstmile integration ends
+    </script>
+  </body>
+</html>
