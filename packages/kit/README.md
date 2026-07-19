@@ -1,139 +1,238 @@
-# @firstmile/kit
+# @firstmile/sdk
 
-firstmile lets a product team watch its first mile in real time through a self-hosted, projector-ready funnel. It is position-only by construction: integrators declare ordered steps, then the kit reports movement, retries, timing, backtracks, lifecycle state, and completion.
-
-**firstmile physically cannot see what your users type: the event schema has no field for content.**
+`@firstmile/sdk` is an ESM-only browser and Node package for recording named onboarding positions and lifecycle signals. The browser API sends events to an existing embedded collector or standalone sidecar. It cannot start a shared backend.
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2Fojusave%2Ffirstmile)
 [Sign up on Render](https://dashboard.render.com/register?utm_source=github&utm_medium=referral&utm_campaign=ojus_demos&utm_content=hero_cta) |
-[Repository](https://github.com/ojusave/firstmile) |
-[Render docs](https://render.com/docs)
+[GitHub repository](https://github.com/ojusave/firstmile)
 
-## Quickstart A: Node and Hono host
+## Installation
 
-From this repository, build the workspace and mount firstmile in a Hono app:
+This package has not been published to npm. In the repository checkout, build and pack it:
 
 ```sh
-npm install
-npm run build
+cd /Users/ojusave/Desktop/Samples/firstmile
+npm ci
+npm run build --workspace @firstmile/sdk
+npm pack --workspace @firstmile/sdk
 ```
+
+Install the resulting tarball in another project:
+
+```sh
+npm install /Users/ojusave/Desktop/Samples/firstmile/firstmile-sdk-0.1.0.tgz
+```
+
+After publication, the intended command will be:
+
+```sh
+npm install @firstmile/sdk
+```
+
+Browser use needs an ESM-aware bundler or runtime. The server and sidecar require Node.js 20 or newer.
+
+## Browser quickstart
+
+The root export is browser-safe. It defaults to the collector endpoint `/__firstmile`:
 
 ```ts
-import { serve } from "@hono/node-server";
-import { Hono } from "hono";
-import { createFirstmile } from "@firstmile/kit";
+import { firstmile } from "@firstmile/sdk";
 
-const adminToken = process.env.ADMIN_TOKEN;
-if (!adminToken) throw new Error("ADMIN_TOKEN is required");
-const manifest = {
-  version: "onboarding-v1",
-  groups: ["signup", "activate"],
-  steps: [
-    { id: "account", group: "signup" },
-    { id: "project", group: "activate" },
-    { id: "success", group: "activate" },
+const fm = firstmile({
+  writeKey: "replace-with-browser-write-key",
+  manifest: {
+    version: "onboarding-v1",
+    groups: ["signup", "activate"],
+    steps: [
+      { id: "account", group: "signup" },
+      { id: "project", group: "activate" },
+      { id: "success", group: "activate" }
+    ]
+  },
+  routes: [
+    { path: "/signup", step: "account" },
+    { path: "/projects/new", step: "project" },
+    { path: "/success", step: "success", shipped: true }
   ],
-};
-const fm = createFirstmile({ manifest, adminToken });
+  dashboard: {
+    enabled: true,
+    defaultOpen: false,
+    token: "replace-with-dashboard-token"
+  }
+});
+
+await fm.ready;
+```
+
+The collector must already exist. For a separate sidecar, set `endpoint` to its origin:
+
+```ts
+const fm = firstmile({
+  endpoint: "https://firstmile-sidecar.example",
+  writeKey: "replace-with-browser-write-key",
+  manifest,
+  routes
+});
+```
+
+## Embedded Hono collector
+
+Mount the server routes at the default browser endpoint:
+
+```ts
+import { Hono } from "hono";
+import { createFirstmile } from "@firstmile/sdk/server";
+
 const app = new Hono();
-app.route("/", fm.routes);
-serve({ fetch: app.fetch, hostname: "0.0.0.0", port: Number(process.env.PORT ?? 8787) });
+
+const fm = createFirstmile({
+  manifest,
+  adminToken: process.env.ADMIN_TOKEN,
+  dashboardToken: process.env.DASHBOARD_TOKEN,
+  writeKey: process.env.WRITE_KEY,
+  allowedOrigins: []
+});
+
+app.route("/__firstmile", fm.routes);
 ```
 
-Serve `dist/tracker.min.js` as a static asset, then initialize and record position from browser code:
+The browser SDK then uses its default:
 
-```html
-<script src="/tracker.min.js"></script>
-<script>
-  firstmile.init({ endpoint: "", manifest: "/api/manifest" }).then(() => {
-    firstmile.view("account");
-    firstmile.complete("account");
-    firstmile.view("project");
-  });
-</script>
+```ts
+firstmile({
+  manifest,
+  writeKey: window.FIRSTMILE_WRITE_KEY,
+  routes,
+  dashboard: { enabled: true, token: window.FIRSTMILE_DASHBOARD_TOKEN }
+});
 ```
 
-An empty endpoint means same-origin. A missing or non-string endpoint disables tracking without affecting the host.
+The host is responsible for starting Hono. `createFirstmile` exposes credentialed ingestion at `/api/events`, the manifest at `/api/manifest`, protected aggregates at `/api/dashboard`, the projector at `/present`, bearer-protected JSONL export at `/export`, and `/healthz`.
 
-## Quickstart B: any stack through the sidecar
+## Standalone sidecar
 
-The sidecar keeps firstmile separate from the host backend. Configure it with environment variables and point the zero-dependency browser tracker at its public URL:
+After installing a local tarball or a future published release:
 
 ```sh
 ADMIN_TOKEN=replace-me \
+DASHBOARD_TOKEN=replace-me-too \
+WRITE_KEY=replace-with-browser-write-key \
 ALLOWED_ORIGINS=https://product.example \
 MANIFEST_JSON='{"version":"v1","groups":["signup"],"steps":[{"id":"account","group":"signup"}]}' \
-node node_modules/@firstmile/kit/dist/sidecar.js
+npx firstmile-sidecar
 ```
 
-```html
-<script src="/assets/tracker.min.js"></script>
-<script>
-  firstmile.init({
-    endpoint: "https://firstmile-sidecar.example",
-    manifest: { version: "v1", groups: ["signup"], steps: [{ id: "account", group: "signup" }] }
-  });
-  firstmile.view("account");
-</script>
+In the current unpublished checkout, build the package and run `node packages/kit/dist/sidecar.js` instead.
+
+The sidecar requires distinct `ADMIN_TOKEN`, `DASHBOARD_TOKEN`, and `WRITE_KEY` values plus one manifest source. It also supports `PORT`, `MANIFEST_JSON`, `MANIFEST_URL`, and `ALLOWED_ORIGINS`. `MANIFEST_JSON` takes precedence when both sources are set. `PORT` defaults to `8787`; the server binds to `0.0.0.0`. `ALLOWED_ORIGINS` is a comma-separated CORS allowlist.
+
+## Route configuration
+
+Each route has an exact absolute pathname, a manifest step, and an optional `shipped` flag:
+
+```ts
+routes: [
+  { path: "/signup", step: "account" },
+  { path: "/projects/new", step: "project" },
+  { path: "/success", step: "success", shipped: true }
+]
 ```
 
-The sidecar defaults to port 8787 and binds to `0.0.0.0`. Configure the manifest with `MANIFEST_JSON` or `MANIFEST_URL`; `MANIFEST_JSON` wins when both are set. `ALLOWED_ORIGINS` is an optional comma-separated list used only for sidecar CORS. The two required environment variables are `ADMIN_TOKEN` and one manifest source. See the complete [plain HTML example](../../examples/plain-html/README.md).
+The observer matches only `window.location.pathname`. It normalizes trailing slashes and ignores query strings, hashes, unmapped paths, and repeat notifications for the same step. It observes the initial route, `pushState`, `replaceState`, and `popstate` without creating history entries.
 
-For Render, use a web service with `node packages/kit/dist/sidecar.js` as its start command, `/healthz` as its health check, and `ADMIN_TOKEN`, `MANIFEST_JSON`, and `ALLOWED_ORIGINS` as environment variables. Render's filesystem is ephemeral, which matches this v0.1 in-memory service: state resets on deploy or restart. The [Deploy to Render documentation](https://render.com/docs/deploy-to-render-button) explains Blueprint-backed one-click deployment.
+Forward movement completes the prior step and records the new step with `from`. Back movement records the earlier step without completing the prior step. Events receive configured step IDs, never the actual pathname or full URL.
 
-## Manifest reference
+## Controller API
 
-The manifest is the only flow declaration:
+`firstmile(options)` initializes immediately and returns:
+
+- `ready`: resolves when initialization finishes.
+- `view(step, nav?, from?)`: records a named position.
+- `error(step, code, attempt)`: records a bounded machine error code.
+- `complete(step)`: records step completion and elapsed time.
+- `copy(artifact)`: records an artifact name, never clipboard content.
+- `paste(step, ok)`: records whether the host accepted a paste result.
+- `shipped()`: records successful flow completion.
+- `openDashboard()`: opens the enabled dashboard overlay.
+- `closeDashboard()`: closes the enabled dashboard overlay.
+- `destroy()`: removes listeners, timers, route wrappers, and injected UI without clearing the persisted session or outbox.
+
+Calls before initialization completes are queued and do not throw. Only one high-level instance is active per page. Calling `firstmile()` again replaces the prior instance.
+
+`defineManifest(manifest)` validates a manifest while preserving its TypeScript type. The root export also provides the `Manifest`, `ManifestStep`, `FirstmileOptions`, `FirstmileRoute`, `FirstmileController`, and `DashboardOptions` types.
+
+## In-app dashboard
+
+The overlay is disabled by default. Set `dashboard.enabled: true` to add a Shadow DOM launcher and an iframe for the collector's `/present` route. `defaultOpen` defaults to `false`.
+
+Dashboard data requires `DASHBOARD_TOKEN`; export requires `ADMIN_TOKEN`; ingestion requires `WRITE_KEY`. The overlay uses the dashboard token in a URL fragment. Treat browser credentials as scoped workshop secrets, restrict CORS, and never place `ADMIN_TOKEN` in browser code.
+
+## Low-level tracker
+
+Import `@firstmile/sdk/tracker` for the original functions:
+
+- `init({ endpoint, manifest, writeKey, sessionTimeoutMs?, app?, debug? })`
+- `view(step, nav?, from?)`
+- `error(step, code, attempt)`
+- `complete(step)`
+- `copy(artifact)`
+- `paste(step, ok)`
+- `shipped()`
+- `onMeta(callback)`
+- `destroy()`
+
+Unlike the high-level root API, low-level `init` requires an explicit endpoint. `endpoint: ""` means same-origin. It accepts a manifest object or manifest URL.
+
+The tracker keeps a namespaced localStorage session and outbox, rolls over shipped or stale sessions, sends batches of at most 50 events, and retries network failures with bounded backoff. Instrumentation failures do not throw into host code. With `debug: true`, degraded initialization warns at most once.
+
+## Manifest
 
 ```ts
 interface Manifest {
   version: string;
   groups: string[];
-  steps: { id: string; group: string; label?: string }[];
+  steps: Array<{ id: string; group: string; label?: string }>;
 }
 ```
 
-Groups and steps are ordered. Each step must reference a declared group, step ids must be unique, and both arrays must be non-empty. `label` is optional. Extra step properties are ignored so a host can keep its own configuration beside firstmile's fields. Change `version` when the flow changes: every event is stamped with it.
+Groups and steps are ordered and non-empty. Step IDs must be unique, every group must contain a step, and steps must follow the declared group order. Change `version` when the flow changes because each event carries the manifest version.
 
-## Tracker API reference
+## Package exports
 
-- `init({ endpoint, manifest, app?, debug? })`: validates or fetches the manifest, restores the local session and outbox, then starts lifecycle tracking. `endpoint: ""` uses same-origin.
-- `view(stepId, nav?, from?)`: records position. Direction is inferred from manifest order when omitted.
-- `error(stepId, code, attempt)`: records an integrator-defined short error code and retry number.
-- `complete(stepId)`: records completion and elapsed time in the current step.
-- `copy(artifactName)`: records only the artifact id, never clipboard content.
-- `paste(stepId, ok)`: records whether the host accepted a paste result.
-- `shipped()`: marks the flow complete and records total elapsed time.
-- `onMeta(callback)`: receives ingest metadata when it changes deeply.
+- `@firstmile/sdk` and `@firstmile/sdk/browser`: browser-safe high-level API.
+- `@firstmile/sdk/tracker`: low-level browser tracker.
+- `@firstmile/sdk/server`: Node and Hono collector.
+- `@firstmile/sdk/manifest`: manifest types and validation.
+- `@firstmile/sdk/reducer`: event reduction API.
+- `@firstmile/sdk/snapshot`: aggregate snapshot API.
+- `@firstmile/sdk/version`: package version.
 
-Events persist in a namespaced localStorage outbox and flush in batches. Network failure retries with bounded backoff. Tracker failures do not throw into host code. With `debug: true`, degradation produces at most one warning.
+## Privacy
 
-## SPA history note
+Firstmile records named positions and lifecycle signals. The SDK never reads form values, textarea values, clipboard contents, or DOM text. The closed schema rejects arbitrary fields and prose-like strings. Integrators must use fixed machine identifiers and must not pass user-provided values into identifier fields. The route observer sends configured step IDs instead of URLs, pathnames, query parameters, or hashes.
 
-firstmile never changes browser history. A single-page app should push a history entry for each visible step and call `view()` from its own route transition. Without per-step entries, the iOS edge swipe can leave the site instead of moving to the prior step, which inflates closed counts.
+Identifiers are bounded and validated. Events containing unknown fields are omitted at ingestion. The SDK does not scan the DOM or modify cookies.
 
-## Dashboard tour
+## Render deployment
 
-Open `/present` on the firstmile server. It polls once per second and renders `started` followed by each manifest group. Ratios between columns show conversion from the prior stage; each group also shows conversion from start. Summary counters report shipped and current lifecycle states.
+The repository includes a Render Blueprint for the sidecar. It uses Node 20, binds to Render's `PORT`, exposes `/healthz`, disables automatic deploys and previews, and configures all three credentials plus the manifest and origin allowlist.
 
-Press `d` to toggle the step drilldown. It shows reach, errors, backtracks, returns, and median step time. The ticker rotates through recent humanized events. The freshness indicator turns red when the snapshot is more than five seconds old. The page loads no external assets and displays no user identifiers.
+[Deploy to Render](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2Fojusave%2Ffirstmile) |
+[Render documentation](https://render.com/docs) |
+[Sign up on Render](https://dashboard.render.com/register?utm_source=github&utm_medium=referral&utm_campaign=ojus_demos&utm_content=footer_link)
 
-## Export and data shape
+The repository is private, so the deploying Render account must have access.
 
-`GET /export?token=<ADMIN_TOKEN>` returns all stored events as newline-delimited JSON. Treat the token as a secret and do not place it in projector URLs. Each line has this envelope:
+## Current v0.1 limitations
 
-```json
-{"sessionId":"random-id","seq":4,"ts":1750000000000,"manifestVersion":"v1","type":"page_view","step":"account","nav":"forward"}
-```
-
-Payload strings are bounded machine identifiers, not prose: 1 to 128 characters using letters, numbers, `.`, `_`, `:`, `/`, or `-`. Error codes use the same syntax with a 64-character limit. Unknown step ids that match this syntax are recorded, which preserves record-never-reject without creating a free-text channel. Arbitrary fields and prose-like strings are omitted at ingestion. `/api/dashboard` returns an aggregate snapshot, while `/api/manifest` returns the validated public flow declaration.
-
-This release stores state in one process and writes accepted events to stdout. It has no persistence backend, cross-instance coordination, or user authentication. Keep one service instance and collect stdout logs if events must survive a restart.
-
-## Beta honesty
-
-firstmile was extracted live from a DevRelCon workshop, v0.1, the API will move, issues welcome, maintained by a person on paternity leave, expect commits at odd hours.
-
-Open issues at [github.com/ojusave/firstmile/issues](https://github.com/ojusave/firstmile/issues).
+- The collector is in-memory and single-process.
+- State resets after a restart or deploy. There is no persistence backend.
+- Multiple collector instances do not coordinate.
+- Browser-visible write and dashboard credentials provide workshop isolation, not user authentication.
+- The default collector limits are designed for a small private beta and use 24-hour in-memory retention.
+- The package is ESM-only. Server usage requires Node.js 20 or newer.
+- The API is pre-1.0 and may change.
+- The package has not been published to npm.
+- The repository is private, and no license has been selected.
 
 License: to be decided before public release.

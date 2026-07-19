@@ -6,11 +6,15 @@ services:
     buildCommand: npm ci && npm run build
     startCommand: node packages/kit/dist/sidecar.js
     healthCheckPath: /healthz
-    autoDeployTrigger: checksPass
+    autoDeployTrigger: off
     envVars:
       - key: NODE_VERSION
         value: "20"
       - key: ADMIN_TOKEN
+        generateValue: true
+      - key: DASHBOARD_TOKEN
+        generateValue: true
+      - key: WRITE_KEY
         generateValue: true
       - key: MANIFEST_JSON
         sync: false
@@ -18,5 +22,4 @@ services:
         sync: false
 
 previews:
-  generation: automatic
-  expireAfterDays: 3
+  generation: off

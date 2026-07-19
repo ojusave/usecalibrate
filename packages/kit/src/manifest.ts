@@ -44,7 +44,10 @@ export function validateManifest(value: unknown): Manifest {
   }
 
   const groupSet = new Set(groups);
+  const groupIndexes = new Map(groups.map((group, index) => [group, index]));
+  const populatedGroups = new Set<string>();
   const stepIds = new Set<string>();
+  let lastGroupIndex = -1;
   const steps = value.steps.map((candidate, index): ManifestStep => {
     if (!isRecord(candidate)) {
       throw new Error(`manifest step at index ${index} must be an object`);
@@ -68,6 +71,11 @@ export function validateManifest(value: unknown): Manifest {
         `manifest step "${id}" references unknown group "${group}"`,
       );
     }
+    const groupIndex = groupIndexes.get(group);
+    if (groupIndex === undefined) throw new Error(`manifest step "${id}" references unknown group "${group}"`);
+    if (groupIndex < lastGroupIndex) throw new Error("manifest steps must follow the declared group order");
+    lastGroupIndex = groupIndex;
+    populatedGroups.add(group);
 
     if (candidate.label !== undefined && typeof candidate.label !== "string") {
       throw new Error(`manifest step "${id}" label must be a string`);
@@ -77,6 +85,9 @@ export function validateManifest(value: unknown): Manifest {
       ? { id, group }
       : { id, group, label: candidate.label };
   });
+
+  const emptyGroup = groups.find((group) => !populatedGroups.has(group));
+  if (emptyGroup !== undefined) throw new Error(`manifest group "${emptyGroup}" has no steps`);
 
   return { version, groups, steps };
 }

@@ -1,7 +1,15 @@
 // @vitest-environment happy-dom
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import * as tracker from "../src/tracker.js";
+import * as trackerModule from "../src/tracker.js";
+import type { InitOptions } from "../src/tracker.js";
+
+type TestInitOptions = Omit<InitOptions, "writeKey"> & { writeKey?: string };
+const tracker = {
+  ...trackerModule,
+  init: (options: TestInitOptions) =>
+    trackerModule.init({ writeKey: "tracker-write-key", ...options }),
+};
 
 const manifest = {
   version: "v1",
@@ -86,7 +94,7 @@ describe("browser tracker", () => {
 
     await expect(tracker.init({ manifest })).resolves.toBeUndefined();
     await expect(
-      tracker.init({ endpoint: 42, manifest } as unknown as tracker.InitOptions),
+      tracker.init({ endpoint: 42, manifest } as unknown as TestInitOptions),
     ).resolves.toBeUndefined();
     tracker.view("one");
 
@@ -140,6 +148,7 @@ describe("browser tracker", () => {
       "fm:product:lastSeen",
       "fm:product:queue",
       "fm:product:seq",
+      "fm:product:shipped",
       "fm:product:sid",
       "fm:product:step",
     ]);
@@ -214,6 +223,24 @@ describe("browser tracker", () => {
     expect(second.sessionId).toMatch(/^fm1\.[0-9a-z]+\.[0-9a-f-]{32,36}$/);
     expect(second.seq).toBeGreaterThan(first.seq);
     expect(second.current).toBe("two");
+  });
+
+  it("starts a new session after shipment or the idle timeout", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ack()));
+
+    await tracker.init({ endpoint: "", manifest, app: "shipped-session" });
+    const beforeShip = localStorage.getItem("fm:shipped-session:sid");
+    tracker.shipped();
+    await tracker.init({ endpoint: "", manifest, app: "shipped-session" });
+    expect(localStorage.getItem("fm:shipped-session:sid")).not.toBe(beforeShip);
+
+    await tracker.init({ endpoint: "", manifest, app: "stale-session" });
+    const beforeTimeout = localStorage.getItem("fm:stale-session:sid");
+    vi.setSystemTime(31 * 60 * 1_000);
+    await tracker.init({ endpoint: "", manifest, app: "stale-session" });
+    expect(localStorage.getItem("fm:stale-session:sid")).not.toBe(beforeTimeout);
   });
 
   it("preserves original startedAt through the encoded session id", async () => {
@@ -307,12 +334,7 @@ describe("browser tracker", () => {
   it("emits visibility heartbeats and drains pagehide with bye", async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn().mockResolvedValue(ack());
-    const beacon = vi.fn().mockReturnValue(true);
     vi.stubGlobal("fetch", fetchMock);
-    Object.defineProperty(navigator, "sendBeacon", {
-      configurable: true,
-      value: beacon,
-    });
     const added: string[] = [];
     const add = vi.spyOn(window, "addEventListener");
     const pushState = vi.spyOn(history, "pushState");
@@ -348,20 +370,14 @@ describe("browser tracker", () => {
     Object.defineProperty(pagehide, "persisted", { value: true });
     const hiddenAt = Date.now();
     window.dispatchEvent(pagehide);
-    expect(beacon).toHaveBeenCalled();
-    const blobs = beacon.mock.calls.map((call) => call[1] as Blob);
-    const bodies = await Promise.all(blobs.map((blob) => blob.text()));
-    const sent = bodies.flatMap(
-      (body) =>
-        (JSON.parse(body) as { events: Array<Record<string, unknown>> }).events,
-    );
+    await settle();
     const fetched = fetchMock.mock.calls.flatMap((call) => {
       const body = JSON.parse(String((call[1] as RequestInit).body)) as {
         events: Array<Record<string, unknown>>;
       };
       return body.events;
     });
-    expect([...fetched, ...sent]).toEqual(
+    expect(fetched).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ type: "heartbeat", visible: true }),
         expect.objectContaining({ type: "heartbeat", visible: false }),

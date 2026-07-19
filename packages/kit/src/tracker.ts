@@ -3,18 +3,7 @@ import {
   isIdentifier,
   requireIdentifier,
 } from "./value-validation.js";
-
-interface ManifestStep {
-  id: string;
-  group: string;
-  label?: string;
-}
-
-interface Manifest {
-  version: string;
-  groups: string[];
-  steps: ManifestStep[];
-}
+import { type Manifest, validateManifest } from "./manifest.js";
 
 type Nav = "forward" | "back";
 type MetaCallback = (meta: unknown) => void;
@@ -44,11 +33,14 @@ interface StoredSession {
   enteredAt: number;
   lastSeen: number;
   startedAt: number;
+  shipped: boolean;
 }
 
 export interface InitOptions {
   endpoint?: string;
   manifest: Manifest | string;
+  writeKey: string;
+  sessionTimeoutMs?: number;
   app?: string;
   debug?: boolean;
 }
@@ -59,6 +51,7 @@ let active = false;
 let warningSent = false;
 let debug = false;
 let endpoint = "";
+let writeKey = "";
 let manifest: Manifest | null = null;
 let session: StoredSession | null = null;
 let outbox: TrackerEvent[] = [];
@@ -71,6 +64,7 @@ let lastMeta = "";
 let removeLifecycle: (() => void) | undefined;
 let generation = 0;
 let bfcacheHiddenAt: number | null = null;
+const defaultSessionTimeoutMs = 30 * 60 * 1_000;
 
 function warn(): void {
   if (debug && !warningSent) {
@@ -86,44 +80,6 @@ function fail(): void {
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function validateManifest(value: unknown): Manifest {
-  if (!record(value)) throw new Error("manifest must be an object");
-  const version = requireIdentifier(value.version, "manifest version");
-  if (!Array.isArray(value.groups) || value.groups.length === 0) {
-    throw new Error("manifest groups must be a non-empty array");
-  }
-  const groups = value.groups.map((item, index) =>
-    requireIdentifier(item, `manifest group at index ${index}`),
-  );
-  if (new Set(groups).size !== groups.length) {
-    throw new Error("manifest groups must be unique");
-  }
-  if (!Array.isArray(value.steps) || value.steps.length === 0) {
-    throw new Error("manifest steps must be a non-empty array");
-  }
-  const ids = new Set<string>();
-  const groupSet = new Set(groups);
-  const steps = value.steps.map((item, index): ManifestStep => {
-    if (!record(item)) {
-      throw new Error(`manifest step at index ${index} must be an object`);
-    }
-    const id = requireIdentifier(item.id, `manifest step id at index ${index}`);
-    if (ids.has(id)) throw new Error(`manifest has duplicate step id "${id}"`);
-    ids.add(id);
-    const group = requireIdentifier(item.group, `manifest step "${id}" group`);
-    if (!groupSet.has(group)) {
-      throw new Error(
-        `manifest step "${id}" references unknown group "${group}"`,
-      );
-    }
-    if (item.label !== undefined && typeof item.label !== "string") {
-      throw new Error(`manifest step "${id}" label must be a string`);
-    }
-    return item.label === undefined ? { id, group } : { id, group, label: item.label };
-  });
-  return { version, groups, steps };
 }
 
 function storageGet<T>(key: string, fallback: T): T {
@@ -169,6 +125,7 @@ function persist(): boolean {
     storageSet("seq", session.seq) &&
     storageSet("step", session.current) &&
     storageSet("lastSeen", session.lastSeen) &&
+    storageSet("shipped", session.shipped) &&
     storageSet("queue", outbox)
   );
 }
@@ -210,6 +167,14 @@ function acceptMeta(value: unknown): void {
   }
 }
 
+function acknowledgesBatch(value: unknown, batchLength: number): boolean {
+  if (!record(value) || value.ok !== true) return false;
+  const counts = [value.accepted, value.rejected, value.duplicates];
+  if (counts.every((count) => count === undefined)) return true;
+  return counts.every((count) => Number.isSafeInteger(count) && Number(count) >= 0) &&
+    counts.map(Number).reduce((total, count) => total + count, 0) === batchLength;
+}
+
 async function flush(): Promise<void> {
   if (!active || flushing || outbox.length === 0) {
     if (active && outbox.length === 0) scheduleFlush();
@@ -221,15 +186,20 @@ async function flush(): Promise<void> {
   try {
     const response = await fetch(`${endpoint}/api/events`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        "x-firstmile-write-key": writeKey,
+      },
       body: JSON.stringify({ events: batch }),
       keepalive: true,
     });
     if (!response.ok) throw new Error("ingest failed");
     const result: unknown = await response.json();
+    if (!acknowledgesBatch(result, batch.length)) throw new Error("ingest acknowledgement is invalid");
     if (run !== generation) return;
     acceptMeta(result);
-    outbox.splice(0, batch.length);
+    const acknowledged = new Set(batch);
+    outbox = outbox.filter((event) => !acknowledged.has(event));
     storageSet("queue", outbox);
     retryIndex = 0;
     flushing = false;
@@ -247,6 +217,7 @@ async function flush(): Promise<void> {
 
 function enqueue(payload: EventPayload, immediate = false): void {
   if (!active || session === null || manifest === null) return;
+  if (session.shipped && payload.type !== "shipped") return;
   const now = Date.now();
   const event = {
     sessionId: session.sessionId,
@@ -291,15 +262,7 @@ function attachLifecycle(): void {
     enqueue({ type: "bye", persisted: event.persisted });
     if (flushTimer !== undefined) clearTimeout(flushTimer);
     flushTimer = undefined;
-    while (outbox.length > 0) {
-      const batch = outbox.slice(0, 50);
-      const body = new Blob([JSON.stringify({ events: batch })], {
-        type: "application/json",
-      });
-      if (!navigator.sendBeacon(`${endpoint}/api/events`, body)) break;
-      outbox.splice(0, batch.length);
-    }
-    storageSet("queue", outbox);
+    void flush();
     stopHeartbeat();
   };
   const pageshow = (event: PageTransitionEvent): void => {
@@ -324,8 +287,9 @@ function attachLifecycle(): void {
  * Initializes tracking from a manifest object or URL.
  */
 export async function init(options: InitOptions): Promise<void> {
+  const run = generation + 1;
   try {
-    generation += 1;
+    generation = run;
     active = false;
     debug = options?.debug === true;
     warningSent = false;
@@ -342,6 +306,8 @@ export async function init(options: InitOptions): Promise<void> {
       throw new Error("endpoint is required");
     }
     endpoint = options.endpoint.trim().replace(/\/+$/, "");
+    if (typeof options.writeKey !== "string" || options.writeKey.trim() === "") throw new Error("writeKey is required");
+    writeKey = options.writeKey;
     storagePrefix = `fm:${requireIdentifier(options.app ?? "default", "app")}:`;
     const source =
       typeof options.manifest === "string"
@@ -350,17 +316,23 @@ export async function init(options: InitOptions): Promise<void> {
             return response.json() as Promise<unknown>;
           })
         : options.manifest;
+    if (run !== generation) return;
     manifest = validateManifest(source);
     const now = Date.now();
     const savedSid = storageGet<unknown>("sid", null);
     const savedSeq = storageGet<unknown>("seq", null);
     const savedStep = storageGet<unknown>("step", null);
     const savedLastSeen = storageGet<unknown>("lastSeen", null);
+    const savedShipped = storageGet<unknown>("shipped", false);
     outbox = storageGet<TrackerEvent[]>("queue", []);
+    const sessionTimeoutMs = options.sessionTimeoutMs ?? defaultSessionTimeoutMs;
+    if (!Number.isSafeInteger(sessionTimeoutMs) || sessionTimeoutMs <= 0) throw new Error("sessionTimeoutMs must be a positive safe integer");
     const resumed =
       typeof savedSid === "string" &&
       Number.isInteger(savedSeq) &&
-      typeof savedLastSeen === "number";
+      typeof savedLastSeen === "number" &&
+      savedShipped !== true &&
+      now - savedLastSeen <= sessionTimeoutMs;
     session = resumed
       ? {
           sessionId: savedSid,
@@ -369,6 +341,7 @@ export async function init(options: InitOptions): Promise<void> {
           enteredAt: savedLastSeen,
           lastSeen: savedLastSeen,
           startedAt: startedAtFromSessionId(savedSid, savedLastSeen),
+          shipped: false,
         }
       : {
           sessionId: randomId(now),
@@ -377,6 +350,7 @@ export async function init(options: InitOptions): Promise<void> {
           enteredAt: now,
           lastSeen: now,
           startedAt: now,
+          shipped: false,
         };
     if (!persist()) throw new Error("storage unavailable");
     active = true;
@@ -391,7 +365,28 @@ export async function init(options: InitOptions): Promise<void> {
         : { type: "session_start" },
     );
   } catch {
+    if (run !== generation) return;
     fail();
+  }
+}
+
+/**
+ * Stops tracking without clearing the persisted session or outbox.
+ */
+export function destroy(): void {
+  try {
+    generation += 1;
+    active = false;
+    if (flushTimer !== undefined) clearTimeout(flushTimer);
+    flushTimer = undefined;
+    stopHeartbeat();
+    removeLifecycle?.();
+    removeLifecycle = undefined;
+    flushing = false;
+    retryIndex = 0;
+    bfcacheHiddenAt = null;
+  } catch {
+    // Teardown is best-effort and must not affect the host.
   }
 }
 
@@ -484,7 +479,8 @@ export function paste(stepId: string, ok: boolean): void {
  */
 export function shipped(): void {
   try {
-    if (!active || session === null) return;
+    if (!active || session === null || session.shipped) return;
+    session.shipped = true;
     enqueue({
       type: "shipped",
       totalMs: Math.max(0, Date.now() - session.startedAt),

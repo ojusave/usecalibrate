@@ -45,6 +45,8 @@ try {
   const firstmile = createFirstmile({
     manifest,
     adminToken: requiredEnv("ADMIN_TOKEN"),
+    dashboardToken: requiredEnv("DASHBOARD_TOKEN"),
+    writeKey: requiredEnv("WRITE_KEY"),
     allowedOrigins: (process.env.ALLOWED_ORIGINS ?? "")
       .split(",")
       .map((origin) => origin.trim())

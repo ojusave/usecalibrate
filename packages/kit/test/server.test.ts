@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Hono } from "hono";
 import type { FirstmileEvent } from "../src/reducer.js";
-import { createFirstmile } from "../src/server.js";
+import {
+  createFirstmile as createServer,
+  type FirstmileServerOptions,
+} from "../src/server.js";
 
 const manifest = {
   version: "v1",
@@ -28,12 +32,31 @@ async function json(response: Response): Promise<unknown> {
   return response.json() as Promise<unknown>;
 }
 
+const writeHeaders = {
+  "Content-Type": "application/json",
+  "X-Firstmile-Write-Key": "write-secret",
+};
+const dashboardHeaders = { Authorization: "Bearer dashboard-secret" };
+
+function createFirstmile(
+  options: Omit<FirstmileServerOptions, "dashboardToken" | "writeKey">,
+) {
+  return createServer({
+    dashboardToken: "dashboard-secret",
+    writeKey: "write-secret",
+    ...options,
+  });
+}
+
 describe("createFirstmile", () => {
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(10_000);
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -52,12 +75,18 @@ describe("createFirstmile", () => {
 
     const response = await server.routes.request("/api/events", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: writeHeaders,
       body: JSON.stringify({ events: batch }),
     });
 
     expect(response.status).toBe(200);
-    expect(await json(response)).toEqual({ ok: true, meta: { mode: "live" } });
+    expect(await json(response)).toEqual({
+      ok: true,
+      accepted: 4,
+      rejected: 0,
+      duplicates: 0,
+      meta: { mode: "live" },
+    });
     expect(server.sessionCount()).toBe(1);
     expect(server.snapshot()).toMatchObject({
       manifestVersion: "v1",
@@ -76,7 +105,7 @@ describe("createFirstmile", () => {
     const start = event(1, { type: "session_start" });
     const response = await server.routes.request("/api/events", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: writeHeaders,
       body: JSON.stringify([start, start]),
     });
 
@@ -86,7 +115,7 @@ describe("createFirstmile", () => {
     expect(process.stdout.write).toHaveBeenCalledTimes(1);
   });
 
-  it("records schema-valid weird events instead of rejecting them", async () => {
+  it("rejects events for another manifest or an unknown step", async () => {
     const server = createFirstmile({ manifest, adminToken: "secret" });
     const weird = event(8, {
       type: "page_view",
@@ -97,12 +126,13 @@ describe("createFirstmile", () => {
 
     const response = await server.routes.request("/api/events", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: writeHeaders,
       body: JSON.stringify({ events: [weird] }),
     });
 
     expect(response.status).toBe(200);
-    expect(server.exportJsonl()).toBe(`${JSON.stringify(weird)}\n`);
+    expect(await response.json()).toMatchObject({ accepted: 0, rejected: 1 });
+    expect(server.exportJsonl()).toBe("");
     expect(server.snapshot().totals.started).toBe(0);
   });
 
@@ -114,7 +144,7 @@ describe("createFirstmile", () => {
     ];
     const response = await server.routes.request("/api/events", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: writeHeaders,
       body: JSON.stringify({ events: batch }),
     });
 
@@ -132,7 +162,7 @@ describe("createFirstmile", () => {
     const server = createFirstmile({ manifest, adminToken: "secret" });
     const response = await server.routes.request("/api/events", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: writeHeaders,
       body: JSON.stringify({ events: "nope" }),
     });
 
@@ -159,7 +189,7 @@ describe("createFirstmile", () => {
       const server = createFirstmile({ manifest, adminToken: "secret" });
       const response = await server.routes.request("/api/events", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: writeHeaders,
         body: JSON.stringify(body),
       });
 
@@ -180,7 +210,7 @@ describe("createFirstmile", () => {
     });
     const response = await server.routes.request("/api/events", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: writeHeaders,
       body: JSON.stringify({
         events: [
           start,
@@ -198,21 +228,30 @@ describe("createFirstmile", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, meta: null });
+    expect(await response.json()).toEqual({
+      ok: true,
+      accepted: 1,
+      rejected: 4,
+      duplicates: 0,
+      meta: null,
+    });
     expect(
       server
         .exportJsonl()
         .trim()
         .split("\n")
         .map((line) => JSON.parse(line) as unknown),
-    ).toEqual([start, unknownStep]);
+    ).toEqual([start]);
   });
 
   it("returns manifest, dashboard, health, and projector routes", async () => {
     const server = createFirstmile({ manifest, adminToken: "secret" });
 
     const manifestResponse = await server.routes.request("/api/manifest");
-    const dashboardResponse = await server.routes.request("/api/dashboard");
+    expect((await server.routes.request("/api/dashboard")).status).toBe(401);
+    const dashboardResponse = await server.routes.request("/api/dashboard", {
+      headers: dashboardHeaders,
+    });
     const healthResponse = await server.routes.request("/healthz");
     const presentResponse = await server.routes.request("/present");
 
@@ -225,7 +264,9 @@ describe("createFirstmile", () => {
     expect(presentResponse.headers.get("content-type")).toContain("text/html");
     expect(presentResponse.headers.get("cache-control")).toBe("no-store");
     const html = await presentResponse.text();
-    expect(html).toContain('fetch("/api/dashboard"');
+    expect(html).toContain("window.location.pathname");
+    expect(html).toContain("fetch(dashboardPath()");
+    expect(html).not.toContain('"/__firstmile"');
     expect(html).toContain("setInterval(poll, 1000)");
     expect(html).toContain('event.key.toLowerCase() === "d"');
     expect(html).toContain("age > 5");
@@ -249,6 +290,30 @@ describe("createFirstmile", () => {
     expect((await server.routes.request("/present/")).status).toBe(200);
   });
 
+  it("works when mounted under a Hono prefix", async () => {
+    const server = createFirstmile({ manifest, adminToken: "secret" });
+    const app = new Hono();
+    app.route("/__firstmile", server.routes);
+    const start = event(1, { type: "session_start" });
+
+    const ingest = await app.request("/__firstmile/api/events", {
+      method: "POST",
+      headers: writeHeaders,
+      body: JSON.stringify({ events: [start] }),
+    });
+    const dashboard = await app.request("/__firstmile/api/dashboard", {
+      headers: dashboardHeaders,
+    });
+    const present = await app.request("/__firstmile/present");
+
+    expect(ingest.status).toBe(200);
+    expect(await dashboard.json()).toMatchObject({
+      totals: { started: 1 },
+    });
+    expect(present.status).toBe(200);
+    expect(await present.text()).toContain("window.location.pathname");
+  });
+
   it("sets no-store on every response", async () => {
     const server = createFirstmile({ manifest, adminToken: "secret" });
     const requests: Array<[string, RequestInit?]> = [
@@ -262,7 +327,7 @@ describe("createFirstmile", () => {
         "/api/events",
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: writeHeaders,
           body: "{}",
         },
       ],
@@ -279,14 +344,15 @@ describe("createFirstmile", () => {
     const stored = event(1, { type: "session_start" });
     await server.routes.request("/api/events", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: writeHeaders,
       body: JSON.stringify([stored]),
     });
 
     expect((await server.routes.request("/export")).status).toBe(401);
-    const response = await server.routes.request(
-      "/export?token=a%20token",
-    );
+    expect((await server.routes.request("/export?token=a%20token")).status).toBe(401);
+    const response = await server.routes.request("/export", {
+      headers: { Authorization: "Bearer a token" },
+    });
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain(
       "application/x-ndjson",
@@ -319,5 +385,37 @@ describe("createFirstmile", () => {
     expect(preflight.headers.get("access-control-allow-methods")).toContain(
       "POST",
     );
+    expect(preflight.headers.get("access-control-allow-headers")).toContain(
+      "X-Firstmile-Write-Key",
+    );
+  });
+
+  it("requires distinct credentials and enforces request limits", async () => {
+    expect(() =>
+      createServer({
+        manifest,
+        adminToken: "same",
+        dashboardToken: "same",
+        writeKey: "different",
+      }),
+    ).toThrow(/must be distinct/);
+
+    const server = createFirstmile({
+      manifest,
+      adminToken: "secret",
+      limits: { maxBodyBytes: 80, maxRequestsPerWindow: 2 },
+    });
+    const start = event(1, { type: "session_start" });
+    expect((await server.routes.request("/api/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify([start]),
+    })).status).toBe(401);
+    expect((await server.routes.request("/api/events", {
+      method: "POST",
+      headers: writeHeaders,
+      body: JSON.stringify([start, start]),
+    })).status).toBe(413);
+    expect((await server.routes.request("/api/manifest")).status).toBe(429);
   });
 });

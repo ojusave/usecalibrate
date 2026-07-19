@@ -46,6 +46,25 @@ describe("validateManifest", () => {
       },
       'references unknown group "missing"',
     ],
+    [
+      {
+        version: "v1",
+        groups: ["first", "empty"],
+        steps: [{ id: "step", group: "first" }],
+      },
+      'group "empty" has no steps',
+    ],
+    [
+      {
+        version: "v1",
+        groups: ["first", "second"],
+        steps: [
+          { id: "later", group: "second" },
+          { id: "earlier", group: "first" },
+        ],
+      },
+      "steps must follow the declared group order",
+    ],
   ])("rejects invalid input with a clear message", (value, message) => {
     expect(() => validateManifest(value)).toThrow(message);
   });

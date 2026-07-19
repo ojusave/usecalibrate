@@ -17,6 +17,8 @@ describe("sidecar configuration", () => {
   afterEach(() => {
     delete process.env.PORT;
     delete process.env.ADMIN_TOKEN;
+    delete process.env.DASHBOARD_TOKEN;
+    delete process.env.WRITE_KEY;
     delete process.env.MANIFEST_JSON;
     delete process.env.MANIFEST_URL;
     serve.mockReset();
@@ -26,6 +28,8 @@ describe("sidecar configuration", () => {
 
   it("defaults to port 8787 and lets MANIFEST_JSON win", async () => {
     process.env.ADMIN_TOKEN = "secret";
+    process.env.DASHBOARD_TOKEN = "dashboard-secret";
+    process.env.WRITE_KEY = "write-secret";
     process.env.MANIFEST_JSON = validManifest;
     process.env.MANIFEST_URL = "https://invalid.example/ignored";
     const fetchMock = vi.spyOn(globalThis, "fetch");
@@ -47,6 +51,8 @@ describe("sidecar configuration", () => {
     ],
   ])("prints manifest validation errors and exits 1", async (value, message) => {
     process.env.ADMIN_TOKEN = "secret";
+    process.env.DASHBOARD_TOKEN = "dashboard-secret";
+    process.env.WRITE_KEY = "write-secret";
     if (value !== undefined) process.env.MANIFEST_JSON = value;
     const stderr = vi
       .spyOn(process.stderr, "write")

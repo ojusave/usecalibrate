@@ -97,8 +97,17 @@ export function validateEvent(value: unknown): FirstmileEvent {
     }
   }
 
-  if (!Number.isInteger(value.seq) || (value.seq as number) < 0) {
-    throw new Error('event field "seq" must be a non-negative integer');
+  if (!Number.isSafeInteger(value.seq) || (value.seq as number) < 0) {
+    throw new Error('event field "seq" must be a non-negative safe integer');
+  }
+  if (!Number.isSafeInteger(value.ts) || (value.ts as number) < 0) {
+    throw new Error('event field "ts" must be a non-negative safe integer');
+  }
+  for (const key of ["awayMs", "attempt", "elapsedMs", "totalMs"] as const) {
+    if (key in value && value[key] !== undefined &&
+      (!Number.isSafeInteger(value[key]) || (value[key] as number) < 0)) {
+      throw new Error(`event field "${key}" must be a non-negative safe integer`);
+    }
   }
   if (type === "page_view" && value.nav !== "forward" && value.nav !== "back") {
     throw new Error('event field "nav" must be "forward" or "back"');
@@ -126,6 +135,15 @@ export function validateEvent(value: unknown): FirstmileEvent {
  * Invalid siblings are omitted so valid events are still recorded.
  */
 export function validateEventBatch(value: unknown): FirstmileEvent[] {
+  return validateEventBatchDetailed(value).events;
+}
+
+export interface ValidatedEventBatch {
+  events: FirstmileEvent[];
+  rejected: number;
+}
+
+export function validateEventBatchDetailed(value: unknown, maxBatchSize = 50): ValidatedEventBatch {
   const candidates = Array.isArray(value)
     ? value
     : isRecord(value) &&
@@ -136,13 +154,18 @@ export function validateEventBatch(value: unknown): FirstmileEvent[] {
   if (candidates === null) {
     throw new Error("request body must be an event array or { events: [] }");
   }
+  if (candidates.length > maxBatchSize) {
+    throw new Error(`event batch cannot contain more than ${maxBatchSize} events`);
+  }
   const valid: FirstmileEvent[] = [];
+  let rejected = 0;
   for (const event of candidates) {
     try {
       valid.push(validateEvent(event));
     } catch {
       // Record-never-reject applies independently to each valid sibling.
+      rejected += 1;
     }
   }
-  return valid;
+  return { events: valid, rejected };
 }

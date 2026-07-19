@@ -3,16 +3,17 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "firstmile monorepo: open-source first-mile user research kit",
+  "description": "firstmile monorepo: position-only onboarding instrumentation SDK",
   "workspaces": [
     "packages/*",
     "apps/*"
   ],
   "scripts": {
-    "build": "npm run build -ws --if-present",
+    "build": "npm run build --workspaces --if-present",
     "test": "vitest run",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit -p packages/kit",
+    "smoke:package": "node scripts/smoke-package.mjs",
     "verify": "node scripts/verify.mjs"
   },
   "devDependencies": {

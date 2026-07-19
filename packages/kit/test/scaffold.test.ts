@@ -13,10 +13,15 @@ describe("scaffold", () => {
       readFileSync(new URL("package.json", root), "utf8"),
     ) as { engines: { node: string }; scripts: Record<string, string> };
     expect(packageJson.engines.node).toBe(">=20");
-    expect(packageJson.scripts.build).toBe("npm run build -ws --if-present");
+    expect(packageJson.scripts.build).toBe(
+      "npm run build --workspaces --if-present",
+    );
     expect(packageJson.scripts.test).toBe("vitest run");
     expect(packageJson.scripts.lint).toBe("eslint .");
     expect(packageJson.scripts.typecheck).toBe("tsc --noEmit -p packages/kit");
+    expect(packageJson.scripts["smoke:package"]).toBe(
+      "node scripts/smoke-package.mjs",
+    );
     expect(packageJson.scripts.verify).toBe("node scripts/verify.mjs");
     expect(readFileSync(new URL(".nvmrc", root), "utf8")).toBe("20\n");
     expect(existsSync(new URL("LICENSE", root))).toBe(false);

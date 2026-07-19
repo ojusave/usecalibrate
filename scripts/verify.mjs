@@ -63,7 +63,7 @@ grepForbidden(
 );
 grepForbidden("no em dash or en dash in tracked source", /[\u2013\u2014]/, root);
 grepForbidden("no emoji in tracked source", /\p{Extended_Pictographic}/u, root);
-run("tracker build", "npm run build:tracker -w @firstmile/kit");
+run("tracker build", "npm run build:tracker -w @firstmile/sdk");
 
 const tracker = readFileSync(join(root, "packages/kit/dist/tracker.min.js"));
 const gzipBytes = gzipSync(tracker).byteLength;
