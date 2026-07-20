@@ -124,7 +124,9 @@ npx firstmile-sidecar
 
 In the current unpublished checkout, build the package and run `node packages/kit/dist/sidecar.js` instead.
 
-The sidecar requires distinct `ADMIN_TOKEN`, `DASHBOARD_TOKEN`, and `WRITE_KEY` values plus one manifest source. It also supports `PORT`, `MANIFEST_JSON`, `MANIFEST_URL`, and `ALLOWED_ORIGINS`. `MANIFEST_JSON` takes precedence when both sources are set. `PORT` defaults to `8787`; the server binds to `0.0.0.0`. `ALLOWED_ORIGINS` is a comma-separated CORS allowlist.
+The sidecar requires distinct `ADMIN_TOKEN`, `DASHBOARD_TOKEN`, and `WRITE_KEY` values plus one manifest source. It also supports `PORT`, `MANIFEST_JSON`, `MANIFEST_URL`, `ALLOWED_ORIGINS`, and `PERSIST_PATH`. `MANIFEST_JSON` takes precedence when both sources are set. `PORT` defaults to `8787`; the server binds to `0.0.0.0`. `ALLOWED_ORIGINS` is a comma-separated CORS allowlist.
+
+`PERSIST_PATH` is optional. When set to a writable file path, every stored event is appended as JSONL and replayed on boot, so sessions and events survive restarts; the sidecar flushes and closes the file on `SIGTERM`. A mounted disk cannot be shared or rolled, so enabling persistence pins the service to a single instance with stop-then-start deploys (see `render.yaml`). Leave `PERSIST_PATH` unset for in-memory-only operation.
 
 ## Route configuration
 
