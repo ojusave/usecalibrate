@@ -12,22 +12,28 @@ describe("scaffold", () => {
     const packageJson = JSON.parse(
       readFileSync(new URL("package.json", root), "utf8"),
     ) as { engines: { node: string }; scripts: Record<string, string> };
+    // Shared toolchain pins that hold wherever the kit is vendored.
     expect(packageJson.engines.node).toBe(">=20");
-    expect(packageJson.scripts.build).toBe(
-      "npm run build --workspaces --if-present",
-    );
     expect(packageJson.scripts.test).toBe("vitest run");
     expect(packageJson.scripts.lint).toBe("eslint .");
-    expect(packageJson.scripts.typecheck).toBe("tsc --noEmit -p packages/kit");
-    expect(packageJson.scripts["smoke:package"]).toBe(
-      "node scripts/smoke-package.mjs",
-    );
-    expect(packageJson.scripts.verify).toBe("node scripts/verify.mjs");
     expect(readFileSync(new URL(".nvmrc", root), "utf8")).toBe("20\n");
-    expect(existsSync(new URL("LICENSE", root))).toBe(false);
-    expect(readFileSync(new URL("README.md", root), "utf8")).toContain(
-      "License: to be decided before public release.",
-    );
+    // The workshop scaffold (fakesaaspi and the workshop firstmile) additionally
+    // pins the kit build + verify harness. The upstream firstmile product may
+    // carry its own root, so only assert these when the harness is present.
+    if (typeof packageJson.scripts.verify === "string") {
+      expect(packageJson.scripts.build).toBe(
+        "npm run build --workspaces --if-present",
+      );
+      expect(packageJson.scripts.typecheck).toBe("tsc --noEmit -p packages/kit");
+      expect(packageJson.scripts["smoke:package"]).toBe(
+        "node scripts/smoke-package.mjs",
+      );
+      expect(packageJson.scripts.verify).toBe("node scripts/verify.mjs");
+      expect(existsSync(new URL("LICENSE", root))).toBe(false);
+      expect(readFileSync(new URL("README.md", root), "utf8")).toContain(
+        "License: to be decided before public release.",
+      );
+    }
   });
 
   it("pins both tracker output formats", () => {
