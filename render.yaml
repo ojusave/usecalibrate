@@ -8,7 +8,8 @@ services:
     # Collector state lives in-process, so keep a single instance: multiple
     # instances would each hold a partial, inconsistent view of the funnel.
     numInstances: 1
-    buildCommand: npm ci && npm run build
+    # The sidecar only needs the kit built; the autocapture packages are unrelated.
+    buildCommand: npm ci && npm run build -w @firstmile/sdk
     startCommand: node packages/kit/dist/sidecar.js
     healthCheckPath: /healthz
     autoDeployTrigger: off

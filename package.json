@@ -7,7 +7,8 @@
   "workspaces": [
     "packages/contract",
     "packages/browser",
-    "packages/collector"
+    "packages/collector",
+    "packages/kit"
   ],
   "scripts": {
     "build": "npm run build -w @firstmile/contract && npm run build -w @firstmile/browser && npm run build -w @firstmile/collector",
