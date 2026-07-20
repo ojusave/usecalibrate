@@ -418,4 +418,27 @@ describe("createFirstmile", () => {
     })).status).toBe(413);
     expect((await server.routes.request("/api/manifest")).status).toBe(429);
   });
+
+  it("reset() clears sessions and stored events", async () => {
+    const server = createFirstmile({ manifest, adminToken: "secret" });
+    await server.routes.request("/api/events", {
+      method: "POST",
+      headers: writeHeaders,
+      body: JSON.stringify({
+        events: [
+          event(1, { type: "session_start" }),
+          event(2, { type: "page_view", step: "one", nav: "forward" }),
+        ],
+      }),
+    });
+    expect(server.sessionCount()).toBe(1);
+    expect(server.exportJsonl()).not.toBe("");
+    expect(server.snapshot().totals.started).toBe(1);
+
+    server.reset();
+
+    expect(server.sessionCount()).toBe(0);
+    expect(server.exportJsonl()).toBe("");
+    expect(server.snapshot().totals.started).toBe(0);
+  });
 });

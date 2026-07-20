@@ -225,7 +225,7 @@ describe("browser tracker", () => {
     expect(second.current).toBe("two");
   });
 
-  it("starts a new session after shipment or the idle timeout", async () => {
+  it("resumes a shipped session within the window but starts fresh after idle timeout", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000);
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ack()));
@@ -234,13 +234,71 @@ describe("browser tracker", () => {
     const beforeShip = localStorage.getItem("fm:shipped-session:sid");
     tracker.shipped();
     await tracker.init({ endpoint: "", manifest, app: "shipped-session" });
-    expect(localStorage.getItem("fm:shipped-session:sid")).not.toBe(beforeShip);
+    expect(localStorage.getItem("fm:shipped-session:sid")).toBe(beforeShip);
+    expect(
+      JSON.parse(localStorage.getItem("fm:shipped-session:shipped") ?? "false"),
+    ).toBe(true);
 
     await tracker.init({ endpoint: "", manifest, app: "stale-session" });
     const beforeTimeout = localStorage.getItem("fm:stale-session:sid");
     vi.setSystemTime(31 * 60 * 1_000);
     await tracker.init({ endpoint: "", manifest, app: "stale-session" });
     expect(localStorage.getItem("fm:stale-session:sid")).not.toBe(beforeTimeout);
+  });
+
+  it("keeps a shipped session posting heartbeat, bye, and resume while blocking funnel events", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    const fetchMock = vi.fn().mockResolvedValue(ack());
+    vi.stubGlobal("fetch", fetchMock);
+    Object.defineProperty(document, "hidden", { configurable: true, value: false });
+
+    await tracker.init({ endpoint: "https://collector.test", manifest, app: "post-ship" });
+    tracker.shipped();
+    await settle();
+
+    tracker.view("one");
+    tracker.complete("one");
+    tracker.copy("api_key");
+    await settle();
+
+    Object.defineProperty(document, "hidden", { configurable: true, value: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+    await settle();
+
+    const pagehide = new Event("pagehide");
+    Object.defineProperty(pagehide, "persisted", { value: false });
+    window.dispatchEvent(pagehide);
+    await settle();
+
+    const posted = fetchMock.mock.calls.flatMap((call) => {
+      const body = JSON.parse(String((call[1] as RequestInit).body)) as {
+        events: Array<Record<string, unknown>>;
+      };
+      return body.events;
+    });
+    const types = posted.map((eventValue) => eventValue.type);
+    expect(types).toContain("shipped");
+    expect(types).toContain("heartbeat");
+    expect(types).toContain("bye");
+    expect(types).not.toContain("page_view");
+    expect(types).not.toContain("step_complete");
+    expect(types).not.toContain("copy");
+
+    vi.setSystemTime(3_000);
+    await tracker.init({ endpoint: "https://collector.test", manifest, app: "post-ship" });
+    await vi.advanceTimersByTimeAsync(2_000);
+    const resumed = fetchMock.mock.calls.flatMap((call) => {
+      const body = JSON.parse(String((call[1] as RequestInit).body)) as {
+        events: Array<Record<string, unknown>>;
+      };
+      return body.events;
+    });
+    expect(resumed).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "session_start", resumed: true }),
+      ]),
+    );
   });
 
   it("preserves original startedAt through the encoded session id", async () => {

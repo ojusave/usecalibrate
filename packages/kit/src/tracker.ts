@@ -217,7 +217,17 @@ async function flush(): Promise<void> {
 
 function enqueue(payload: EventPayload, immediate = false): void {
   if (!active || session === null || manifest === null) return;
-  if (session.shipped && payload.type !== "shipped") return;
+  // A shipped session stays alive (heartbeat/bye keep it posting so it still
+  // receives meta and sees the RELEASE flip) and can resume (session_start),
+  // but its funnel-progress events stay blocked.
+  if (
+    session.shipped &&
+    payload.type !== "shipped" &&
+    payload.type !== "heartbeat" &&
+    payload.type !== "bye" &&
+    payload.type !== "session_start"
+  )
+    return;
   const now = Date.now();
   const event = {
     sessionId: session.sessionId,
@@ -331,7 +341,6 @@ export async function init(options: InitOptions): Promise<void> {
       typeof savedSid === "string" &&
       Number.isInteger(savedSeq) &&
       typeof savedLastSeen === "number" &&
-      savedShipped !== true &&
       now - savedLastSeen <= sessionTimeoutMs;
     session = resumed
       ? {
@@ -341,7 +350,7 @@ export async function init(options: InitOptions): Promise<void> {
           enteredAt: savedLastSeen,
           lastSeen: savedLastSeen,
           startedAt: startedAtFromSessionId(savedSid, savedLastSeen),
-          shipped: false,
+          shipped: savedShipped === true,
         }
       : {
           sessionId: randomId(now),

@@ -70,6 +70,7 @@ export interface FirstmileServer {
   snapshot(): DashboardSnapshot;
   exportJsonl(): string;
   sessionCount(): number;
+  reset(): void;
 }
 
 function setCorsHeaders(
@@ -260,6 +261,11 @@ export function createFirstmile(
       : `${events.map((event) => JSON.stringify(event)).join("\n")}\n`;
   }
 
+  function reset(): void {
+    sessions.clear();
+    events.length = 0;
+  }
+
   return {
     routes,
     snapshot,
@@ -268,6 +274,7 @@ export function createFirstmile(
       prune();
       return sessions.size;
     },
+    reset,
   };
 }
 

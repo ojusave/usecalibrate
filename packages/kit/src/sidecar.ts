@@ -1,9 +1,16 @@
 #!/usr/bin/env node
+import { createHash, timingSafeEqual } from "node:crypto";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import type { Manifest } from "./manifest.js";
 import { validateManifest } from "./manifest.js";
 import { createFirstmile } from "./server.js";
+
+function adminAuthorized(header: string | undefined, expected: string): boolean {
+  const token = /^Bearer[ \t]+(.+)$/i.exec(header ?? "")?.[1] ?? "";
+  const candidate = createHash("sha256").update(token).digest();
+  return timingSafeEqual(candidate, createHash("sha256").update(expected).digest());
+}
 
 function requiredEnv(name: string): string {
   const value = process.env[name];
@@ -42,9 +49,10 @@ async function loadManifest(): Promise<Manifest> {
 try {
   const port = parsePort(process.env.PORT);
   const manifest = await loadManifest();
+  const adminToken = requiredEnv("ADMIN_TOKEN");
   const firstmile = createFirstmile({
     manifest,
-    adminToken: requiredEnv("ADMIN_TOKEN"),
+    adminToken,
     dashboardToken: requiredEnv("DASHBOARD_TOKEN"),
     writeKey: requiredEnv("WRITE_KEY"),
     allowedOrigins: (process.env.ALLOWED_ORIGINS ?? "")
@@ -53,6 +61,14 @@ try {
       .filter((origin) => origin.length > 0),
   });
   const app = new Hono();
+  // Sidecar deployments share the kit's in-memory lifetime, so expose reset here too.
+  app.post("/admin/reset", (context) => {
+    if (!adminAuthorized(context.req.header("Authorization"), adminToken)) {
+      return context.json({ ok: false, error: "unauthorized" }, 401);
+    }
+    firstmile.reset();
+    return context.json({ ok: true });
+  });
   app.route("/", firstmile.routes);
 
   serve({ fetch: app.fetch, hostname: "0.0.0.0", port }, (info) => {
