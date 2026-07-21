@@ -14,7 +14,9 @@
     "build": "npm run build -w @firstmile/contract && npm run build -w @firstmile/browser && npm run build -w @firstmile/collector",
     "test": "vitest run",
     "lint": "eslint .",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "verify": "node scripts/verify.mjs",
+    "smoke:package": "node scripts/smoke-package.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.28.0",
