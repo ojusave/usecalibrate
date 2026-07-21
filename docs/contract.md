@@ -31,7 +31,7 @@ Every event carries these fields:
 | `user` | identifier | Optional. Present only when the host calls `identify()` with consent. |
 | `type` | string | Discriminates the payload (below). |
 
-An **identifier** is 1–128 characters matching `^[A-Za-z0-9][A-Za-z0-9._:/-]*$`. This is the
+An **identifier** is 1 to 128 characters matching `^[A-Za-z0-9][A-Za-z0-9._:/-]*$`. This is the
 privacy floor: free-form text and PII cannot pass validation, so they cannot be stored.
 
 ## Event types

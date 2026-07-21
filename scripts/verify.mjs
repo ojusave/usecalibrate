@@ -54,7 +54,9 @@ function grepForbidden(label, pattern, directory) {
 
 console.log("firstmile verify (Prompt 1)");
 run("lint", "npm run lint");
+run("contract build", "npm run build -w @firstmile/contract");
 run("typecheck", "npm run typecheck");
+run("SDK build", "npm run build -w @firstmile/sdk");
 run("test", "npm run test");
 grepForbidden(
   "wall: no fakesaaspi under packages/kit",
@@ -63,8 +65,6 @@ grepForbidden(
 );
 grepForbidden("no em dash or en dash in tracked source", /[\u2013\u2014]/, root);
 grepForbidden("no emoji in tracked source", /\p{Extended_Pictographic}/u, root);
-run("tracker build", "npm run build:tracker -w @firstmile/sdk");
-
 const tracker = readFileSync(join(root, "packages/kit/dist/tracker.min.js"));
 const gzipBytes = gzipSync(tracker).byteLength;
 console.log(

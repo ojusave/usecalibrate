@@ -105,12 +105,12 @@ The collector reads everything from the environment with production-safe default
 | `PORT` | `8787` | Port to bind on `0.0.0.0`. |
 | `STORE` | `sqlite` | `sqlite`, `postgres`, or `memory`. Defaults to `postgres` if `DATABASE_URL` is set. |
 | `SQLITE_PATH` | `./firstmile.db` | SQLite file path. |
-| `DATA_DIR` | — | Directory for the SQLite file when `SQLITE_PATH` is unset. |
-| `DATABASE_URL` | — | Postgres connection string. Required when `STORE=postgres`. |
-| `ALLOWED_ORIGINS` | — | Comma-separated origins allowed to post cross-origin. |
-| `ADMIN_TOKEN` | — | When set, guards `/export`. When unset, export is open (fine for local). |
+| `DATA_DIR` | Not set | Directory for the SQLite file when `SQLITE_PATH` is unset. |
+| `DATABASE_URL` | Not set | Postgres connection string. Required when `STORE=postgres`. |
+| `ALLOWED_ORIGINS` | Not set | Comma-separated origins allowed to post cross-origin. |
+| `ADMIN_TOKEN` | Not set | When set, guards `/export`. When unset, export is open (fine for local). |
 | `DEST_STDOUT` | `false` | Also write each event as JSON to stdout. |
-| `WEBHOOK_URL` | — | Also forward batches to this URL, with timeout and capped retry. |
+| `WEBHOOK_URL` | Not set | Also forward batches to this URL, with timeout and capped retry. |
 
 If SQLite cannot open its file, the collector logs a warning and falls back to in-memory storage rather than failing to start. Postgres is chosen explicitly, so a bad connection fails fast.
 
