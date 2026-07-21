@@ -9,7 +9,7 @@ The tracker records configured step IDs and lifecycle signals. It does not read 
 Build the SDK from the physical repository path:
 
 ```sh
-cd /Users/ojusave/Desktop/Samples/usecalibrate
+cd usecalibrate
 npm ci
 npm run build --workspace usecalibrate
 ```
@@ -22,13 +22,13 @@ DASHBOARD_TOKEN=example-dashboard \
 WRITE_KEY=example-write-key \
 ALLOWED_ORIGINS=http://localhost:8080 \
 MANIFEST_JSON='{"version":"plain-html-v1","groups":["signup","select","finish"],"steps":[{"id":"email","group":"signup"},{"id":"plan","group":"select"},{"id":"done","group":"finish"}]}' \
-node /Users/ojusave/Desktop/Samples/usecalibrate/packages/kit/dist/sidecar.js
+node packages/kit/dist/sidecar.js
 ```
 
 Serve the repository from another terminal:
 
 ```sh
-cd /Users/ojusave/Desktop/Samples/usecalibrate
+cd usecalibrate
 python3 -m http.server 8080
 ```
 
