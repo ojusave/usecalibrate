@@ -1,28 +1,20 @@
 # Plain HTML example
 
-This three-step signup uses Calibrate without a frontend framework or application backend. It loads the low-level `tracker.min.js` IIFE, calls the global `calibrate` tracker API, and sends events to the standalone sidecar. It does not exercise the high-level `calibrate()` ESM facade from `usecalibrate`.
+This three-step onboarding flow uses Calibrate without a frontend framework or application backend. It loads the published `tracker.min.js` browser bundle, calls the global `calibrate` tracker API, and sends events to the standalone sidecar over HTTP. Calibrate does not use WebSockets.
 
-The tracker records configured step IDs and lifecycle signals. It does not read the email or plan value.
+The tracker records configured step IDs and lifecycle signals. It does not read the email, workspace name, or plan value.
 
-## Run the local sidecar example
+## Run the onboarding flow
 
-Build the SDK from the physical repository path:
-
-```sh
-cd usecalibrate
-npm ci
-npm run build --workspace usecalibrate
-```
-
-In the same terminal, start the sidecar:
+From the repository root, start the published sidecar package:
 
 ```sh
 ADMIN_TOKEN=example \
 DASHBOARD_TOKEN=example-dashboard \
 WRITE_KEY=example-write-key \
 ALLOWED_ORIGINS=http://localhost:8080 \
-MANIFEST_JSON='{"version":"plain-html-v1","groups":["signup","select","finish"],"steps":[{"id":"email","group":"signup"},{"id":"plan","group":"select"},{"id":"done","group":"finish"}]}' \
-node packages/kit/dist/sidecar.js
+MANIFEST_JSON='{"version":"onboarding-demo-v1","groups":["account","workspace","activation"],"steps":[{"id":"account","group":"account"},{"id":"workspace","group":"workspace"},{"id":"complete","group":"activation"}]}' \
+npx --yes --package usecalibrate@0.1.2 calibrate-sidecar
 ```
 
 Serve the repository from another terminal:
@@ -37,23 +29,10 @@ Open these URLs:
 - Signup: <http://localhost:8080/examples/plain-html/signup.html>
 - Projector dashboard: <http://localhost:8787/present#token=example-dashboard>
 
-Move through the three screens and watch the dashboard update. The marked block in `signup.html` contains the manifest, low-level `calibrate.init()` call, manual events, and UI wiring.
+Move through the three screens, then select **View onboarding data**. The dashboard polls `GET /api/dashboard` once per second and shows starts, completions, the funnel, timing, and recent event names.
+
+The browser tracker sends batches to `POST http://localhost:8787/api/events`. The sidecar validates and reduces those events in memory. Set `PERSIST_PATH` when you need sessions to survive a restart.
 
 `ALLOWED_ORIGINS` is required because ports 8080 and 8787 are different browser origins. If you open the HTML directly with a `file://` URL, use `ALLOWED_ORIGINS=null` instead. Serving it over HTTP gives browser behavior closer to a deployed integration.
 
-The browser script cannot launch the collector. Keep the sidecar running while using the example. The collector is in-memory, so its dashboard state resets when the process stops.
-
-## Installed-package sidecar
-
-After installing `usecalibrate` from npm or a locally built tarball, the equivalent sidecar command is:
-
-```sh
-ADMIN_TOKEN=example \
-DASHBOARD_TOKEN=example-dashboard \
-WRITE_KEY=example-write-key \
-ALLOWED_ORIGINS=http://localhost:8080 \
-MANIFEST_JSON='{"version":"plain-html-v1","groups":["signup","select","finish"],"steps":[{"id":"email","group":"signup"},{"id":"plan","group":"select"},{"id":"done","group":"finish"}]}' \
-npx calibrate-sidecar
-```
-
-The example HTML still needs access to the package's built `tracker.min.js` file at the script path configured in `signup.html`.
+The browser bundle cannot launch the collector. Keep the sidecar running while using the example. The default collector is in memory, so its dashboard state resets when the process stops.
