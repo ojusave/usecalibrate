@@ -43,9 +43,9 @@ Move through the three screens and watch the dashboard update. The marked block 
 
 The browser script cannot launch the collector. Keep the sidecar running while using the example. The collector is in-memory, so its dashboard state resets when the process stops.
 
-## Future installed-package sidecar
+## Installed-package sidecar
 
-`usecalibrate` has not been published to npm. After installing a locally built tarball or a future published release, the equivalent sidecar command will be:
+After installing `usecalibrate` from npm or a locally built tarball, the equivalent sidecar command is:
 
 ```sh
 ADMIN_TOKEN=example \

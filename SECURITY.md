@@ -1,12 +1,12 @@
 # Security
 
-Calibrate is public source under Apache-2.0, but its packages have not been published to npm and the API is pre-1.0. Do not send secrets, form values, clipboard contents, DOM text, URLs, or user-provided values through event identifiers.
+Calibrate is public source under Apache-2.0. The `usecalibrate` package is published on npm, and its API is pre-1.0. Do not send secrets, form values, clipboard contents, DOM text, URLs, or user-provided values through event identifiers.
 
 ## Reporting a vulnerability
 
 Private GitHub vulnerability reporting is not currently enabled. Until it is enabled, report vulnerabilities to the maintainer through an established private channel. Do not open a public issue containing exploit details or credentials.
 
-Before publishing the packages, enable private vulnerability reporting and replace this temporary process with a monitored security contact.
+Before publishing additional packages or broadly announcing the project, enable private vulnerability reporting and replace this temporary process with a monitored security contact.
 
 ## Credential model
 

@@ -4,8 +4,11 @@ Open-source product observability that shows how your product is used, starting 
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org)
+[![npm](https://img.shields.io/npm/v/usecalibrate.svg)](https://www.npmjs.com/package/usecalibrate)
 
-> The `usecalibrate` package has not been published to npm yet.
+```bash
+npm install usecalibrate
+```
 
 Install one package, point it at your app, and Calibrate detects the pages, fields, and the flow between them, then streams that structure to a collector you run. It records that an email field was focused, filled, or errored. It never records what someone typed. Most funnel tools make you choose between "see everything, inherit a PII problem" and "instrument every step by hand." Calibrate takes a third path: autocapture the shape of the journey, leave the contents in the browser.
 
@@ -46,7 +49,15 @@ The floor is a shared validation rule. Every identifier on the wire is 1 to 128 
 
 ## Quick start
 
-Calibrate is a four-package workspace and is not yet published to npm. Build it from a checkout:
+The published `usecalibrate` package includes the browser SDK, embedded collector, and `calibrate-sidecar` CLI:
+
+```ts
+import { calibrate } from "usecalibrate";
+```
+
+Start with the [package quickstart](./packages/kit/README.md#browser-quickstart), or run the [standalone sidecar](./packages/kit/README.md#standalone-sidecar). The package is available on [npm](https://www.npmjs.com/package/usecalibrate).
+
+To develop the full four-package source workspace locally:
 
 ```bash
 npm install
@@ -61,11 +72,13 @@ node packages/collector/dist/cli.js
 # [calibrate] store: sqlite · dashboard: /
 ```
 
-Open `http://localhost:8787` for the dashboard. Once published, the same collector will run with `npx @usecalibrate/collector`.
+Open `http://localhost:8787` for the source-workspace dashboard.
+
+The internal `@usecalibrate/*` workspace packages are not published separately. The public npm package is `usecalibrate`.
 
 ## Usage
 
-**A web app with a bundler:**
+**A web app using the source workspace:**
 
 ```ts
 import { calibrate } from "@usecalibrate/browser";
@@ -78,12 +91,7 @@ const fm = calibrate({
 
 That single call starts autocapture. With a client router, page and flow events appear as visitors navigate, and field interactions appear as they fill forms.
 
-**A plain HTML page** adds the SDK with one script tag. See [`examples/plain-html`](./examples/plain-html) for a runnable multi-step form. The published CDN form will be:
-
-```html
-<script src="https://cdn.jsdelivr.net/npm/usecalibrate"></script>
-<script>calibrate({ app: "site", endpoint: "https://collector.example.com" });</script>
-```
+**A plain HTML page** can use the built tracker bundle. See [`examples/plain-html`](./examples/plain-html) for a runnable multi-step form.
 
 **The manual API** covers what autocapture cannot see:
 

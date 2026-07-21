@@ -8,7 +8,15 @@
 
 ## Installation
 
-This package has not been published to npm. In the repository checkout, build and pack it:
+Install the package from npm:
+
+```sh
+npm install usecalibrate
+```
+
+Browser use needs an ESM-aware bundler or runtime. The server and sidecar require Node.js 20 or newer.
+
+To build and pack it from a repository checkout instead:
 
 ```sh
 cd /Users/ojusave/Desktop/Samples/usecalibrate
@@ -22,14 +30,6 @@ Install the resulting tarball in another project:
 ```sh
 npm install /Users/ojusave/Desktop/Samples/usecalibrate/usecalibrate-0.1.0.tgz
 ```
-
-After publication, the intended command will be:
-
-```sh
-npm install usecalibrate
-```
-
-Browser use needs an ESM-aware bundler or runtime. The server and sidecar require Node.js 20 or newer.
 
 ## Browser quickstart
 
@@ -111,7 +111,7 @@ The host is responsible for starting Hono. `createCalibrate` exposes credentiale
 
 ## Standalone sidecar
 
-After installing a local tarball or a future published release:
+After installing `usecalibrate`:
 
 ```sh
 ADMIN_TOKEN=replace-me \
@@ -122,7 +122,7 @@ MANIFEST_JSON='{"version":"v1","groups":["signup"],"steps":[{"id":"account","gro
 npx calibrate-sidecar
 ```
 
-In the current unpublished checkout, build the package and run `node packages/kit/dist/sidecar.js` instead.
+From a repository checkout, build the package and run `node packages/kit/dist/sidecar.js` instead.
 
 The sidecar requires distinct `ADMIN_TOKEN`, `DASHBOARD_TOKEN`, and `WRITE_KEY` values plus one manifest source. It also supports `PORT`, `MANIFEST_JSON`, `MANIFEST_URL`, `ALLOWED_ORIGINS`, and `PERSIST_PATH`. `MANIFEST_JSON` takes precedence when both sources are set. `PORT` defaults to `8787`; the server binds to `0.0.0.0`. `ALLOWED_ORIGINS` is a comma-separated CORS allowlist.
 
@@ -234,7 +234,7 @@ The repository is public. The deploy still creates private service credentials, 
 - The default collector limits are designed for small workshops and evaluations and use 24-hour retention.
 - The package is ESM-only. Server usage requires Node.js 20 or newer.
 - The API is pre-1.0 and may change.
-- The package has not been published to npm.
+- Version `0.1.0` is published on npm under `usecalibrate`.
 - The source repository is public under Apache-2.0.
 
 License: [Apache-2.0](./LICENSE).
