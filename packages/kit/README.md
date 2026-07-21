@@ -19,7 +19,7 @@ Browser use needs an ESM-aware bundler or runtime. The server and sidecar requir
 To build and pack it from a repository checkout instead:
 
 ```sh
-cd /Users/ojusave/Desktop/Samples/usecalibrate
+cd usecalibrate
 npm ci
 npm run build --workspace usecalibrate
 npm pack --workspace usecalibrate
@@ -28,7 +28,7 @@ npm pack --workspace usecalibrate
 Install the resulting tarball in another project:
 
 ```sh
-npm install /Users/ojusave/Desktop/Samples/usecalibrate/usecalibrate-0.1.1.tgz
+npm install /path/to/usecalibrate-0.1.2.tgz
 ```
 
 ## Browser quickstart
