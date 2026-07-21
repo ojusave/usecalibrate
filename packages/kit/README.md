@@ -223,18 +223,18 @@ The repository includes a Render Blueprint for the sidecar. It uses Node 20, bin
 [Render documentation](https://render.com/docs) |
 [Sign up on Render](https://dashboard.render.com/register?utm_source=github&utm_medium=referral&utm_campaign=ojus_demos&utm_content=footer_link)
 
-The repository is private, so the deploying Render account must have access.
+The repository is public. The deploy still creates private service credentials, which must be replaced before use and kept out of source control.
 
 ## Current v0.1 limitations
 
-- The collector is in-memory and single-process.
-- State resets after a restart or deploy. There is no persistence backend.
-- Multiple collector instances do not coordinate.
+- The embedded collector and sidecar are single-process.
+- State resets after a restart or deploy unless `PERSIST_PATH` points to a writable file. File persistence replays JSONL on startup and requires one instance.
+- Multiple collector instances do not coordinate or share state.
 - Browser-visible write and dashboard credentials provide workshop isolation, not user authentication.
-- The default collector limits are designed for a small private beta and use 24-hour in-memory retention.
+- The default collector limits are designed for small workshops and evaluations and use 24-hour retention.
 - The package is ESM-only. Server usage requires Node.js 20 or newer.
 - The API is pre-1.0 and may change.
 - The package has not been published to npm.
-- The repository is private, and no license has been selected.
+- The source repository is public under Apache-2.0.
 
-License: to be decided before public release.
+License: [Apache-2.0](./LICENSE).

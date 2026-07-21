@@ -5,7 +5,7 @@ Self-hostable onboarding and funnel diagnostics that autocapture the flow withou
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org)
 
-> Firstmile is a placeholder name and will change before public release. The name lives in one constant, so the rename is a one-line edit.
+> Firstmile is a placeholder name and will change before any package release. The packages are not published to npm.
 
 Install one package, point it at your app, and Firstmile detects the pages, fields, and the flow between them, then streams that structure to a collector you run. It records that an email field was focused, filled, or errored. It never records what someone typed. Most funnel tools make you choose between "see everything, inherit a PII problem" and "instrument every step by hand." Firstmile takes a third path: autocapture the shape of the journey, leave the contents in the browser.
 
@@ -46,7 +46,7 @@ The floor is a shared validation rule. Every identifier on the wire is 1 to 128 
 
 ## Quick start
 
-Firstmile is a workspace of three packages and is not yet published to npm. Build it from a checkout:
+Firstmile is a four-package workspace and is not yet published to npm. Build it from a checkout:
 
 ```bash
 npm install

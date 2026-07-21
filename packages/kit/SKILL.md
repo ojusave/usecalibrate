@@ -26,4 +26,4 @@ Use this package to instrument named positions and lifecycle signals in a fixed 
 
 ## Verification
 
-Run `npm run verify`, `npm run build`, `npm run smoke:package`, and `bash scripts/smoke-sidecar.sh` from the repository root. Do not claim a public release until a license is selected, the package is published, the repository is public, and a real integration has been observed.
+Run `npm run verify`, `npm run build`, `npm run smoke:package`, and `bash scripts/smoke-sidecar.sh` from the repository root when those scripts are available. Do not claim an npm release until the package is published and a real integration has been observed. Describe source availability and licensing from the current repository visibility and license file.

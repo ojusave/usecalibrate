@@ -7,6 +7,19 @@ describe("scaffold", () => {
     expect(FIRSTMILE_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
+  it("ships explicit Apache-2.0 package licensing", () => {
+    const packageRoot = new URL("../", import.meta.url);
+    const packageJson = JSON.parse(
+      readFileSync(new URL("package.json", packageRoot), "utf8"),
+    ) as { license?: string; files?: string[] };
+
+    expect(packageJson.license).toBe("Apache-2.0");
+    expect(packageJson.files).toContain("LICENSE");
+    expect(readFileSync(new URL("LICENSE", packageRoot), "utf8")).toContain(
+      "Apache License",
+    );
+  });
+
   it("pins the Appendix A root toolchain", () => {
     const root = new URL("../../../", import.meta.url);
     const packageJson = JSON.parse(

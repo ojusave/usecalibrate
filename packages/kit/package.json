@@ -2,6 +2,7 @@
   "name": "@firstmile/sdk",
   "version": "0.1.0",
   "description": "Self-hosted, position-only onboarding instrumentation SDK",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ojusave/firstmile.git",
@@ -58,6 +59,7 @@
   "files": [
     "dist",
     "present",
+    "LICENSE",
     "README.md",
     "SKILL.md"
   ],
