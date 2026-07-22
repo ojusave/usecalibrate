@@ -93,22 +93,10 @@ The package reference covers the [controller API](./packages/kit/README.md#contr
 
 Calibrate includes a portable [Agent Skill](./packages/kit/skills/install-calibrate/SKILL.md) and a machine-readable, plan-before-write installer. The agent detects the application, proposes fixed route IDs, writes a reviewable plan, waits for approval, applies only that plan, and verifies the result.
 
-> Release status: the current npm release, `usecalibrate@0.1.2`, supports the manual integration above but does not include the installer CLI. Build the current repository package to test agent installation now. A new npm release is required before the CLI commands can run directly from the public registry.
-
-Build and pack the current package:
+Install `usecalibrate@0.1.3` or newer in the target application. The package includes the installer CLI and the portable skill at `node_modules/usecalibrate/skills/install-calibrate`. Make that skill directory available to your coding agent using its normal Agent Skills installation method.
 
 ```sh
-git clone https://github.com/ojusave/usecalibrate.git
-cd usecalibrate
-npm ci
-npm run build --workspace usecalibrate
-npm pack --workspace usecalibrate
-```
-
-In the target application, install the generated tarball and make the skill directory available to your coding agent using its normal Agent Skills installation method:
-
-```sh
-npm install /path/to/usecalibrate/usecalibrate-0.1.3.tgz
+npm install usecalibrate
 ```
 
 Then ask the agent:
@@ -191,7 +179,6 @@ The current public package lives in [`packages/kit`](./packages/kit). The other 
 - Browser-visible write and dashboard credentials provide workshop isolation, not end-user authentication.
 - The default collector limits and 24-hour retention target small workshops and evaluations.
 - The agent installer currently supports React/Vite and generic ESM browser applications.
-- The installer CLI is in the repository but not in the current `usecalibrate@0.1.2` npm artifact.
 
 ## License
 
