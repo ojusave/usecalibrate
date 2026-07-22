@@ -117,10 +117,12 @@ interface PackageDocument {
 export interface PlanOptions {
   routes?: CalibrateRoute[];
   endpoint?: string;
+  manifest?: Manifest;
 }
 
 export interface ApplyOptions {
   install?: boolean;
+  quiet?: boolean;
 }
 
 function planIdentifier(
@@ -136,8 +138,172 @@ export interface VerifyOptions {
   writeKey?: string;
 }
 
+export interface CollectorDiscovery {
+  v: 1;
+  command: "discover-collector";
+  status: "ready" | "blocked";
+  endpoint: string | null;
+  dashboardUrl: string | null;
+  manifest: Manifest | null;
+  checks: VerificationCheck[];
+  issues: string[];
+}
+
+export interface GuidedInstallPreparation {
+  v: 1;
+  command: "install";
+  status: "ready" | "needs_human_judgment" | "blocked";
+  targetDir: string;
+  collector: CollectorDiscovery;
+  plan: InstallPlan | null;
+}
+
+export interface GuidedInstallResult {
+  v: 1;
+  command: "install";
+  status: "installed" | "partial" | "blocked";
+  evidence: "none" | "artifact" | "runtime";
+  targetDir: string;
+  collectorUrl: string | null;
+  dashboardUrl: string | null;
+  hosting: {
+    browserSdk: "bundled-with-application";
+    collector: "existing-standalone-or-embedded-service";
+    dashboard: "served-by-collector";
+  };
+  changedFiles: string[];
+  unchangedFiles: string[];
+  requiredEnvironment: string[];
+  checks: VerificationCheck[];
+  issues: string[];
+}
+
+export interface GuidedInstallOptions {
+  writeKey?: string;
+  install?: boolean;
+  quiet?: boolean;
+}
+
 function sha256(content: string): string {
   return createHash("sha256").update(content).digest("hex");
+}
+
+export function normalizeCollectorUrl(value: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error("collector URL must be an absolute http or https URL");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("collector URL must use http or https");
+  }
+  if (parsed.username !== "" || parsed.password !== "") {
+    throw new Error("collector URL must not contain credentials");
+  }
+  if (parsed.search !== "" || parsed.hash !== "") {
+    throw new Error("collector URL must not contain a query or fragment");
+  }
+  parsed.pathname = parsed.pathname === "/"
+    ? ""
+    : parsed.pathname.replace(/\/+$/, "");
+  return parsed.toString().replace(/\/$/, "");
+}
+
+export async function discoverCollector(value: string): Promise<CollectorDiscovery> {
+  let endpoint: string;
+  try {
+    endpoint = normalizeCollectorUrl(value);
+  } catch (error) {
+    return {
+      v: 1,
+      command: "discover-collector",
+      status: "blocked",
+      endpoint: null,
+      dashboardUrl: null,
+      manifest: null,
+      checks: [],
+      issues: [error instanceof Error ? error.message : "collector URL is invalid"],
+    };
+  }
+  const dashboardUrl = `${endpoint}/dashboard`;
+  const checks: VerificationCheck[] = [];
+  let manifest: Manifest | null = null;
+  try {
+    const health = await fetch(`${endpoint}/healthz`, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(10_000),
+    });
+    checks.push({
+      name: "collector-health",
+      ok: health.ok,
+      detail: `GET /healthz returned ${health.status}`,
+    });
+    if (!health.ok) throw new Error("collector health check failed");
+
+    const manifestResponse = await fetch(`${endpoint}/api/manifest`, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!manifestResponse.ok) {
+      checks.push({
+        name: "collector-manifest",
+        ok: false,
+        detail: `GET /api/manifest returned ${manifestResponse.status}`,
+      });
+      throw new Error("collector manifest is unavailable");
+    }
+    try {
+      const discoveredManifest = validateManifest(await manifestResponse.json());
+      manifest = discoveredManifest;
+      checks.push({
+        name: "collector-manifest",
+        ok: true,
+        detail: `manifest ${discoveredManifest.version} has ${discoveredManifest.steps.length} steps`,
+      });
+    } catch (error) {
+      checks.push({
+        name: "collector-manifest",
+        ok: false,
+        detail: error instanceof Error ? error.message : "collector manifest is invalid",
+      });
+      throw new Error("collector manifest is invalid");
+    }
+
+    const dashboard = await fetch(dashboardUrl, {
+      headers: { Accept: "text/html" },
+      signal: AbortSignal.timeout(10_000),
+    });
+    const dashboardReady = dashboard.ok &&
+      (dashboard.headers.get("content-type") ?? "").includes("text/html");
+    checks.push({
+      name: "collector-dashboard",
+      ok: dashboardReady,
+      detail: `GET /dashboard returned ${dashboard.status}`,
+    });
+    if (!dashboardReady) throw new Error("collector dashboard is unavailable");
+  } catch (error) {
+    return {
+      v: 1,
+      command: "discover-collector",
+      status: "blocked",
+      endpoint,
+      dashboardUrl,
+      manifest: null,
+      checks,
+      issues: [error instanceof Error ? error.message : "collector discovery failed"],
+    };
+  }
+  return {
+    v: 1,
+    command: "discover-collector",
+    status: "ready",
+    endpoint,
+    dashboardUrl,
+    manifest,
+    checks,
+    issues: [],
+  };
 }
 
 function readText(path: string): string | null {
@@ -406,8 +572,48 @@ export function planInstall(directory: string, options: PlanOptions = {}): Insta
     };
   }
 
-  const manifest = manifestFor(routes);
-  validateRoutes(routes, manifest);
+  let manifest: Manifest;
+  try {
+    manifest = options.manifest === undefined
+      ? manifestFor(routes)
+      : validateManifest(options.manifest);
+    validateRoutes(routes, manifest);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "route mapping is invalid";
+    const body = { targetDir: detection.targetDir, status: "needs_human_judgment", routes, message };
+    return {
+      v: 1,
+      command: "plan",
+      planId: sha256(JSON.stringify(body)),
+      targetDir: detection.targetDir,
+      status: "needs_human_judgment",
+      detection,
+      configuration: null,
+      changes: [],
+      installCommand: null,
+      requiredEnvironment: [],
+      decisions: ["Map each fixed application route to a step in the collector manifest."],
+      issues: [`route mapping does not match the collector manifest: ${message}`],
+    };
+  }
+  const shippedRoutes = routes.filter((route) => route.shipped === true);
+  if (shippedRoutes.length !== 1) {
+    const body = { targetDir: detection.targetDir, status: "needs_human_judgment", routes, shippedRoutes: shippedRoutes.length };
+    return {
+      v: 1,
+      command: "plan",
+      planId: sha256(JSON.stringify(body)),
+      targetDir: detection.targetDir,
+      status: "needs_human_judgment",
+      detection,
+      configuration: null,
+      changes: [],
+      installCommand: null,
+      requiredEnvironment: [],
+      decisions: ["Mark exactly one fixed route as the shipped outcome."],
+      issues: [`expected exactly one shipped route, found ${shippedRoutes.length}`],
+    };
+  }
   const entryFile = detection.entryFile;
   const entryExtension = extname(entryFile);
   const integrationExtension = entryExtension === ".tsx" ? ".ts" : entryExtension === ".jsx" ? ".js" : entryExtension;
@@ -549,7 +755,10 @@ export function applyInstallPlan(plan: InstallPlan, options: ApplyOptions = {}):
   if (options.install === true && plan.installCommand !== null) {
     const [command, ...args] = plan.installCommand;
     if (command !== undefined) {
-      const result = spawnSync(command, args, { cwd: plan.targetDir, stdio: "inherit" });
+      const result = spawnSync(command, args, {
+        cwd: plan.targetDir,
+        stdio: options.quiet === true ? "pipe" : "inherit",
+      });
       installExitCode = result.status ?? 1;
     }
   }
@@ -652,6 +861,111 @@ export async function verifyInstallation(directory: string, options: VerifyOptio
     evidence: runtimeRequested ? "runtime" : "artifact",
     targetDir,
     checks,
+  };
+}
+
+export async function prepareGuidedInstall(
+  directory: string,
+  collectorUrl: string,
+  routes?: CalibrateRoute[],
+): Promise<GuidedInstallPreparation> {
+  const targetDir = resolve(directory);
+  const collector = await discoverCollector(collectorUrl);
+  if (collector.status !== "ready" || collector.endpoint === null || collector.manifest === null) {
+    return {
+      v: 1,
+      command: "install",
+      status: "blocked",
+      targetDir,
+      collector,
+      plan: null,
+    };
+  }
+  const plan = planInstall(targetDir, {
+    endpoint: collector.endpoint,
+    manifest: collector.manifest,
+    ...(routes === undefined || routes.length === 0 ? {} : { routes }),
+  });
+  return {
+    v: 1,
+    command: "install",
+    status: plan.status === "ready" ? "ready" : plan.status,
+    targetDir,
+    collector,
+    plan,
+  };
+}
+
+export async function completeGuidedInstall(
+  preparation: GuidedInstallPreparation,
+  options: GuidedInstallOptions = {},
+): Promise<GuidedInstallResult> {
+  const base = {
+    v: 1 as const,
+    command: "install" as const,
+    targetDir: preparation.targetDir,
+    collectorUrl: preparation.collector.endpoint,
+    dashboardUrl: preparation.collector.dashboardUrl,
+    hosting: {
+      browserSdk: "bundled-with-application" as const,
+      collector: "existing-standalone-or-embedded-service" as const,
+      dashboard: "served-by-collector" as const,
+    },
+  };
+  if (
+    preparation.status !== "ready" ||
+    preparation.plan?.status !== "ready" ||
+    preparation.collector.endpoint === null
+  ) {
+    return {
+      ...base,
+      status: "blocked",
+      evidence: "none",
+      changedFiles: [],
+      unchangedFiles: [],
+      requiredEnvironment: preparation.plan?.requiredEnvironment ?? [],
+      checks: preparation.collector.checks,
+      issues: [
+        ...preparation.collector.issues,
+        ...(preparation.plan?.issues ?? []),
+        ...(preparation.plan?.decisions ?? []),
+      ],
+    };
+  }
+
+  const collectorEndpoint = preparation.collector.endpoint;
+  const applied = applyInstallPlan(preparation.plan, {
+    ...(options.install === undefined ? {} : { install: options.install }),
+    ...(options.quiet === undefined ? {} : { quiet: options.quiet }),
+  });
+  if (applied.status !== "applied") {
+    return {
+      ...base,
+      status: applied.changedFiles.length > 0 ? "partial" : "blocked",
+      evidence: applied.changedFiles.length > 0 ? "artifact" : "none",
+      changedFiles: applied.changedFiles,
+      unchangedFiles: applied.unchangedFiles,
+      requiredEnvironment: preparation.plan.requiredEnvironment,
+      checks: preparation.collector.checks,
+      issues: applied.issues,
+    };
+  }
+
+  const runtime = options.writeKey === undefined
+    ? {}
+    : { endpoint: collectorEndpoint, writeKey: options.writeKey };
+  const verification = await verifyInstallation(preparation.targetDir, runtime);
+  return {
+    ...base,
+    status: verification.status === "verified" ? "installed" : "partial",
+    evidence: verification.evidence,
+    changedFiles: applied.changedFiles,
+    unchangedFiles: applied.unchangedFiles,
+    requiredEnvironment: preparation.plan.requiredEnvironment,
+    checks: [...preparation.collector.checks, ...verification.checks],
+    issues: verification.status === "verified"
+      ? []
+      : verification.checks.filter((check) => !check.ok).map((check) => check.detail),
   };
 }
 

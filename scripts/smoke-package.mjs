@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -10,6 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
+import { createServer } from "node:net";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
@@ -18,6 +19,7 @@ const root = join(fileURLToPath(import.meta.url), "..", "..");
 const temporary = mkdtempSync(join(tmpdir(), "calibrate-package-"));
 const consumer = join(temporary, "consumer");
 let tarball;
+let sidecarProcess;
 
 function run(command, args, options = {}) {
   return execFileSync(command, args, {
@@ -30,6 +32,33 @@ function run(command, args, options = {}) {
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+async function availablePort() {
+  return await new Promise((resolvePort, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (address === null || typeof address === "string") {
+        server.close();
+        reject(new Error("failed to allocate a package-smoke port"));
+        return;
+      }
+      server.close((error) => error ? reject(error) : resolvePort(address.port));
+    });
+  });
+}
+
+async function waitForHealth(url) {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    try {
+      const response = await fetch(`${url}/healthz`);
+      if (response.ok) return;
+    } catch {}
+    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+  }
+  throw new Error("package-smoke sidecar did not become healthy");
 }
 
 try {
@@ -137,6 +166,90 @@ try {
   assert(existsSync(join(agentFixture, "calibrate.install.json")), "agent installer did not create its installation record");
   assert(readFileSync(join(agentFixture, "src/main.ts"), "utf8").includes("Calibrate instrumentation"), "agent installer did not connect the host entry point");
 
+  const guidedFixture = join(consumer, "guided-fixture");
+  mkdirSync(join(guidedFixture, "src"), { recursive: true });
+  writeFileSync(
+    join(guidedFixture, "package.json"),
+    JSON.stringify({
+      name: "calibrate-guided-fixture",
+      private: true,
+      type: "module",
+      dependencies: { react: "latest" },
+      devDependencies: { vite: "latest" },
+    }),
+  );
+  writeFileSync(join(guidedFixture, "package-lock.json"), "{}\n");
+  writeFileSync(
+    join(guidedFixture, "src/main.ts"),
+    [
+      "export const routes = [",
+      '  { path: "/signup" },',
+      '  { path: "/projects/new" },',
+      '  { path: "/success" },',
+      "];",
+      "",
+    ].join("\n"),
+  );
+  const port = await availablePort();
+  const collectorUrl = `http://127.0.0.1:${port}`;
+  const writeKey = "package-smoke-write-key";
+  sidecarProcess = spawn(join(consumer, "node_modules/.bin/calibrate-sidecar"), [], {
+    cwd: guidedFixture,
+    env: {
+      ...process.env,
+      PORT: String(port),
+      ADMIN_TOKEN: "package-smoke-admin",
+      DASHBOARD_TOKEN: "package-smoke-dashboard",
+      WRITE_KEY: writeKey,
+      MANIFEST_JSON: JSON.stringify({
+        version: "guided-smoke-v1",
+        groups: ["onboarding"],
+        steps: [
+          { id: "signup", group: "onboarding" },
+          { id: "new", group: "onboarding" },
+          { id: "success", group: "onboarding" },
+        ],
+      }),
+    },
+    stdio: ["ignore", "ignore", "inherit"],
+  });
+  await waitForHealth(collectorUrl);
+
+  const unapproved = spawnSync(calibrateBin, [
+    "install",
+    "--dir",
+    guidedFixture,
+    "--url",
+    collectorUrl,
+    "--json",
+    "--no-install",
+  ], { cwd: guidedFixture, encoding: "utf8" });
+  assert(unapproved.status === 3, "noninteractive guided install did not require --yes");
+  assert(!existsSync(join(guidedFixture, "calibrate.install.json")), "unapproved guided install changed project files");
+
+  const guidedOutput = run(calibrateBin, [
+    "install",
+    "--dir",
+    guidedFixture,
+    "--url",
+    collectorUrl,
+    "--yes",
+    "--json",
+    "--no-install",
+  ], {
+    cwd: guidedFixture,
+    env: { ...process.env, CALIBRATE_WRITE_KEY: writeKey },
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  const guidedResult = JSON.parse(guidedOutput);
+  assert(guidedResult.status === "installed", "guided installer did not report installed");
+  assert(guidedResult.evidence === "runtime", "guided installer did not perform runtime verification");
+  assert(guidedResult.dashboardUrl === `${collectorUrl}/dashboard`, "guided installer returned the wrong dashboard URL");
+  assert(!guidedOutput.includes(writeKey), "guided installer printed the write key");
+  for (const file of guidedResult.changedFiles) {
+    assert(!readFileSync(join(guidedFixture, file), "utf8").includes(writeKey), `guided installer persisted the write key in ${file}`);
+  }
+
   const browserFixture = join(consumer, "browser-fixture.ts");
   const browserBundle = join(consumer, "browser-bundle.js");
   writeFileSync(
@@ -225,6 +338,7 @@ try {
     `package smoke: ok (${pack.files.length} files, ${pack.size} packed bytes, ${pack.unpackedSize} unpacked bytes)`,
   );
 } finally {
+  if (sidecarProcess !== undefined) sidecarProcess.kill("SIGTERM");
   if (tarball) rmSync(tarball, { force: true });
   rmSync(temporary, { recursive: true, force: true });
 }

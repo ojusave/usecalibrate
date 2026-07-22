@@ -9,6 +9,10 @@ Use the `calibrate` CLI for deterministic detection, planning, application, and 
 
 ## Workflow
 
+When the user supplies an existing collector URL and wants the shortest guided flow, run `npx usecalibrate install --url <collector-url>` first without `--yes`. Review its collector checks, exact manifest, route mapping, file plan, required environment names, and dashboard URL. After explicit approval, rerun with `--yes`. Add `--json` for noninteractive output and provide `CALIBRATE_WRITE_KEY` only for runtime verification.
+
+When the collector URL is unavailable, the mapping needs manual investigation, or a durable plan artifact is useful, use the lower-level workflow:
+
 1. Run `npx usecalibrate detect --dir . --json` without changing files.
 2. Review the detected framework, entry point, existing installation, and proposed fixed routes.
 3. If routes are missing or ambiguous, ask the user which ordered routes form the onboarding flow and which route means shipped.
@@ -30,6 +34,7 @@ Read [references/cli.md](references/cli.md) for command details, exit codes, sup
 - Keep browser and collector manifests identical by using `calibrate.install.json` as the installer record.
 - Do not overwrite a custom Calibrate integration or ambiguous application entry point.
 - Do not deploy, publish, create accounts, or modify production infrastructure without explicit authorization.
+- Treat `--url` as an existing collector. The installer does not deploy or host infrastructure.
 
 ## Completion
 

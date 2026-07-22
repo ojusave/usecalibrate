@@ -55,7 +55,23 @@ Install the public ESM package. Server and sidecar use require Node.js 20 or new
 
 ```sh
 npm install usecalibrate
+npx usecalibrate install --url https://your-calibrate-collector.example
 ```
+
+The guided installer checks the collector's `/healthz`, `/api/manifest`, and `/dashboard` routes before touching project files. It shows the exact remote manifest, proposed route mapping, file changes, dependency command, and required environment names, then asks for confirmation. If route detection is ambiguous, supply fixed mappings explicitly:
+
+```sh
+npx usecalibrate install \
+  --url https://your-calibrate-collector.example \
+  --route /signup=account \
+  --route /welcome=success:shipped
+```
+
+Set `CALIBRATE_WRITE_KEY` only when you want the installer to send a synthetic journey and verify the collector at runtime. The key is read from the environment and is never written into generated files. Without it, the command can complete with static artifact evidence and says that runtime verification was skipped.
+
+Calibrate does not automatically deploy a backend with your application. The browser SDK is bundled with your app. The URL passed to `--url` must point to an already running standalone or embedded collector, and that collector serves the dashboard at `<collector-url>/dashboard`.
+
+If you do not have a collector yet, start one locally or use the [Render deployment](#deployment) before running the guided installer.
 
 ### 1. Start a collector
 
@@ -118,6 +134,8 @@ Then ask the agent:
 The underlying commands are deterministic and emit JSON:
 
 ```sh
+npx usecalibrate install --url https://collector.example --yes --json
+# Or use the lower-level plan workflow:
 npx calibrate detect --dir . --json
 npx calibrate plan --dir . --out calibrate.plan.json
 # Review calibrate.plan.json and the proposed route-to-step mappings.
