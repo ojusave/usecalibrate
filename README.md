@@ -93,7 +93,7 @@ The package reference covers the [controller API](./packages/kit/README.md#contr
 
 Calibrate includes a portable [Agent Skill](./packages/kit/skills/install-calibrate/SKILL.md) and a machine-readable, plan-before-write installer. The agent detects the application, proposes fixed route IDs, writes a reviewable plan, waits for approval, applies only that plan, and verifies the result.
 
-Install `usecalibrate@0.1.3` or newer in the target application. The package includes the installer CLI and the portable skill at `node_modules/usecalibrate/skills/install-calibrate`. Make that skill directory available to your coding agent using its normal Agent Skills installation method.
+Install `usecalibrate@0.1.4` or newer in the target application. The package includes the interactive dashboard, installer CLI, and portable skill at `node_modules/usecalibrate/skills/install-calibrate`. Make that skill directory available to your coding agent using its normal Agent Skills installation method.
 
 ```sh
 npm install usecalibrate
