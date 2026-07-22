@@ -1,6 +1,6 @@
 {
   "name": "usecalibrate",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Self-hosted, position-only onboarding instrumentation SDK",
   "license": "Apache-2.0",
   "repository": {
@@ -54,14 +54,16 @@
     }
   },
   "bin": {
-    "calibrate-sidecar": "dist/sidecar.js"
+    "calibrate": "dist/cli.js",
+    "calibrate-sidecar": "dist/sidecar.js",
+    "usecalibrate": "dist/cli.js"
   },
   "files": [
     "dist",
     "present",
+    "skills",
     "LICENSE",
-    "README.md",
-    "SKILL.md"
+    "README.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json && npm run build:tracker",

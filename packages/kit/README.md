@@ -16,6 +16,23 @@ npm install usecalibrate
 
 Browser use needs an ESM-aware bundler or runtime. The server and sidecar require Node.js 20 or newer.
 
+### Install with an AI coding agent
+
+The package ships a portable Agent Skill at `skills/install-calibrate`. Install that directory in your agent's skill location, then ask:
+
+> Install Calibrate for this application's onboarding flow.
+
+The skill drives a plan-before-write CLI:
+
+```sh
+npx usecalibrate detect --dir . --json
+npx usecalibrate plan --dir . --out calibrate.plan.json
+npx usecalibrate apply --plan calibrate.plan.json --yes
+npx usecalibrate verify --dir . --json
+```
+
+V1 supports React/Vite and generic ESM browser applications. The planner proposes fixed route identifiers but requires review before applying them. Runtime verification can send a synthetic completed journey to a local sidecar and confirm that an event carrying an unknown content field is rejected.
+
 To build and pack it from a repository checkout instead:
 
 ```sh
@@ -28,7 +45,7 @@ npm pack --workspace usecalibrate
 Install the resulting tarball in another project:
 
 ```sh
-npm install /path/to/usecalibrate-0.1.2.tgz
+npm install /path/to/usecalibrate-0.1.3.tgz
 ```
 
 ## Browser quickstart

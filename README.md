@@ -1,175 +1,198 @@
+<div align="center">
+
 # Calibrate
 
-Open-source product observability that shows how your product is used, starting with onboarding and funnel friction, without reading user-entered content.
+Self-hosted, position-only observability for onboarding flows.
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
-[![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org)
 [![npm](https://img.shields.io/npm/v/usecalibrate.svg)](https://www.npmjs.com/package/usecalibrate)
+[![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
 
-```bash
+[Package reference](./packages/kit/README.md) | [Agent Skill](./packages/kit/skills/install-calibrate/SKILL.md) | [Deploy to Render](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2Fojusave%2Fusecalibrate)
+
+</div>
+
+Calibrate shows where people stall in a known onboarding flow without recording what they type. You define stable step IDs and route mappings. The browser SDK emits those positions and a bounded set of lifecycle signals to a collector you control.
+
+It does not scan the DOM, infer form fields, read input values, capture clipboard contents, or send URLs. This makes Calibrate a focused fit for workshops, product evaluations, and small onboarding flows where position and completion matter more than session replay.
+
+## Choose your path
+
+| Goal | Start here |
+|---|---|
+| Integrate the SDK yourself | [Human quickstart](#human-quickstart) |
+| Ask a coding agent to install it | [Agent installation](#agent-installation) |
+| Review all browser, server, and sidecar options | [Package reference](./packages/kit/README.md) |
+| Deploy the sidecar | [Deployment](#deployment) |
+| Work on Calibrate itself | [Development](#development) |
+
+## What Calibrate records
+
+- Named positions such as `account`, `project`, and `success`
+- Forward and back navigation between configured steps
+- Step completion and elapsed time
+- Bounded machine error codes
+- Named copy actions and whether a paste was accepted, never clipboard content
+- Successful flow completion
+
+The collector accepts a closed event schema and drops unknown fields. Integrators must still use fixed machine identifiers and must never put user-provided content into step IDs, error codes, or artifact names.
+
+## Human quickstart
+
+Install the public ESM package. Server and sidecar use require Node.js 20 or newer.
+
+```sh
 npm install usecalibrate
 ```
 
-Install one package, point it at your app, and Calibrate detects the pages, fields, and the flow between them, then streams that structure to a collector you run. It records that an email field was focused, filled, or errored. It never records what someone typed. Most funnel tools make you choose between "see everything, inherit a PII problem" and "instrument every step by hand." Calibrate takes a third path: autocapture the shape of the journey, leave the contents in the browser.
+### 1. Start a collector
 
-- [Highlights](#highlights)
-- [How it works](#how-it-works)
-- [The privacy guarantee](#the-privacy-guarantee)
-- [Quick start](#quick-start)
-- [Usage](#usage)
-- [Configuration](#configuration)
-- [Deploy](#deploy)
-- [Project structure](#project-structure)
-- [Development](#development)
-- [Current limits](#current-limits)
+The standalone sidecar needs three distinct credentials and a manifest. These values are examples only.
 
-## Highlights
+```sh
+ADMIN_TOKEN=local-admin-only \
+DASHBOARD_TOKEN=local-dashboard-only \
+WRITE_KEY=local-browser-write-key \
+ALLOWED_ORIGINS=http://localhost:5173 \
+MANIFEST_JSON='{"version":"onboarding-v1","groups":["signup"],"steps":[{"id":"account","group":"signup"},{"id":"success","group":"signup"}]}' \
+npx calibrate-sidecar
+```
 
-- **Autocapture, not manual instrumentation.** It observes route changes and form fields on its own. You call the manual API only for things the DOM cannot tell it, like an API response that means the flow shipped.
-- **Privacy is enforced on the wire, not promised in docs.** Every event must pass a bounded schema at ingestion. An event carrying a stray `email` value is dropped by the collector, not stored and hoped over.
-- **The contract is the product.** Ingestion is a documented `POST /api/events`. The browser SDK is the reference client; a native app or a backend can produce the same events with an HTTP call.
-- **Runs anywhere Node runs.** SQLite by default means there is no database to provision to try it. Point `DATABASE_URL` at Postgres when you want durable, multi-instance storage.
-- **Fault-isolated by design.** Instrumentation never throws into your app, and a failing destination is logged without blocking ingestion.
+The sidecar listens on `http://localhost:8787` by default. It stores state in memory unless `PERSIST_PATH` points to a writable JSONL file.
 
-## How it works
-
-<!-- TODO: replace with a real architecture diagram at static/images/architecture-diagram.png -->
-> _Architecture diagram: to be added._
-
-A client sends events to the collector. The collector validates them against the contract, dedupes and persists them, reduces them into per-session state, and serves a dashboard.
-
-<!-- TODO: replace with a real dashboard screenshot at static/images/dashboard.png -->
-> _Dashboard screenshot: to be added._
-
-## The privacy guarantee
-
-Calibrate records named positions and a closed set of interaction signals. It does not read input values, textarea contents, clipboard contents, DOM text, or arbitrary attributes. The route observer never sends full URLs, query strings, or hashes: dynamic-looking path segments (numeric ids, uuids, hashes) collapse to `:id` before anything leaves the page, so a real user id in a URL never becomes a route.
-
-The floor is a shared validation rule. Every identifier on the wire is 1 to 128 characters matching `^[A-Za-z0-9:/][A-Za-z0-9._:/-]*$`. Prose, emails, and quoted text fail that rule, so they cannot ride along in a field the schema would otherwise accept. The collector enforces it a second time at ingestion. See [docs/contract.md](./docs/contract.md) for the full event vocabulary.
-
-## Quick start
-
-The published `usecalibrate` package includes the browser SDK, embedded collector, and `calibrate-sidecar` CLI:
+### 2. Map routes to onboarding steps
 
 ```ts
 import { calibrate } from "usecalibrate";
-```
-
-Start with the [package quickstart](./packages/kit/README.md#browser-quickstart), or run the [standalone sidecar](./packages/kit/README.md#standalone-sidecar). The package is available on [npm](https://www.npmjs.com/package/usecalibrate).
-
-To develop the full four-package source workspace locally:
-
-```bash
-npm install
-npm run build
-```
-
-Run the collector. With no configuration it uses a local SQLite file and serves a dashboard on port 8787:
-
-```bash
-node packages/collector/dist/cli.js
-# [calibrate] Calibrate collector on http://0.0.0.0:8787
-# [calibrate] store: sqlite · dashboard: /
-```
-
-Open `http://localhost:8787` for the source-workspace dashboard.
-
-The internal `@usecalibrate/*` workspace packages are not published separately. The public npm package is `usecalibrate`.
-
-## Usage
-
-**A web app using the source workspace:**
-
-```ts
-import { calibrate } from "@usecalibrate/browser";
 
 const fm = calibrate({
-  app: "my-app",
   endpoint: "http://localhost:8787",
+  writeKey: "local-browser-write-key",
+  manifest: {
+    version: "onboarding-v1",
+    groups: ["signup"],
+    steps: [
+      { id: "account", group: "signup" },
+      { id: "success", group: "signup" }
+    ]
+  },
+  routes: [
+    { path: "/signup", step: "account" },
+    { path: "/welcome", step: "success", shipped: true }
+  ]
 });
+
+await fm.ready;
 ```
 
-That single call starts autocapture. With a client router, page and flow events appear as visitors navigate, and field interactions appear as they fill forms.
+Open the configured routes in your app, then visit `http://localhost:8787/present#token=local-dashboard-only` to inspect the projector. For same-origin applications, you can instead [mount the Hono collector inside your app](./packages/kit/README.md#embedded-hono-collector).
 
-**A plain HTML page** can use the built tracker bundle. See [`examples/plain-html`](./examples/plain-html) for a runnable multi-step form.
+The package reference covers the [controller API](./packages/kit/README.md#controller-api), [route behavior](./packages/kit/README.md#route-configuration), [manifest rules](./packages/kit/README.md#manifest), and [package exports](./packages/kit/README.md#package-exports).
 
-**The manual API** covers what autocapture cannot see:
+## Agent installation
 
-```ts
-fm.shipped();                 // the flow completed (e.g. an API returned 200)
-fm.page("/checkout");         // a position you want to record explicitly
-fm.copy("api_key");           // an artifact name, never its contents
-fm.identify("account_9f8c");  // optional, opaque, consented id
+Calibrate includes a portable [Agent Skill](./packages/kit/skills/install-calibrate/SKILL.md) and a machine-readable, plan-before-write installer. The agent detects the application, proposes fixed route IDs, writes a reviewable plan, waits for approval, applies only that plan, and verifies the result.
+
+> Release status: the current npm release, `usecalibrate@0.1.2`, supports the manual integration above but does not include the installer CLI. Build the current repository package to test agent installation now. A new npm release is required before the CLI commands can run directly from the public registry.
+
+Build and pack the current package:
+
+```sh
+git clone https://github.com/ojusave/usecalibrate.git
+cd usecalibrate
+npm ci
+npm run build --workspace usecalibrate
+npm pack --workspace usecalibrate
 ```
 
-See [`examples/react`](./examples/react) for a React integration.
+In the target application, install the generated tarball and make the skill directory available to your coding agent using its normal Agent Skills installation method:
 
-## Configuration
-
-The collector reads everything from the environment with production-safe defaults.
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `PORT` | `8787` | Port to bind on `0.0.0.0`. |
-| `STORE` | `sqlite` | `sqlite`, `postgres`, or `memory`. Defaults to `postgres` if `DATABASE_URL` is set. |
-| `SQLITE_PATH` | `./calibrate.db` | SQLite file path. |
-| `DATA_DIR` | Not set | Directory for the SQLite file when `SQLITE_PATH` is unset. |
-| `DATABASE_URL` | Not set | Postgres connection string. Required when `STORE=postgres`. |
-| `ALLOWED_ORIGINS` | Not set | Comma-separated origins allowed to post cross-origin. |
-| `ADMIN_TOKEN` | Not set | When set, guards `/export`. When unset, export is open (fine for local). |
-| `DEST_STDOUT` | `false` | Also write each event as JSON to stdout. |
-| `WEBHOOK_URL` | Not set | Also forward batches to this URL, with timeout and capped retry. |
-
-If SQLite cannot open its file, the collector logs a warning and falls back to in-memory storage rather than failing to start. Postgres is chosen explicitly, so a bad connection fails fast.
-
-## Deploy
-
-The collector is a standard Node service, so any host works. Two equal paths:
-
-**Docker:**
-
-```bash
-docker build -f packages/collector/Dockerfile -t calibrate-collector .
-docker run -p 8787:8787 -v "$PWD/data:/data" calibrate-collector
+```sh
+npm install /path/to/usecalibrate/usecalibrate-0.1.3.tgz
 ```
 
-**Node directly:** run `node packages/collector/dist/cli.js` behind whatever process manager or platform you use (a VPS, Fly, Railway, Render, Kubernetes). Set `DATABASE_URL` for durable storage and `ALLOWED_ORIGINS` for the sites that post to it.
+Then ask the agent:
 
-## Project structure
+> Install Calibrate for this application's onboarding flow. Inspect the proposed routes, show me the plan before changing files, then verify the completed integration.
 
+The underlying commands are deterministic and emit JSON:
+
+```sh
+npx calibrate detect --dir . --json
+npx calibrate plan --dir . --out calibrate.plan.json
+# Review calibrate.plan.json and the proposed route-to-step mappings.
+npx calibrate apply --plan calibrate.plan.json --yes
+npx calibrate verify --dir . --json
 ```
-packages/contract   The public event schema and shared types. Depends on nothing else.
-packages/browser    The browser SDK: autocapture, transport, flow inference, manual API.
-packages/collector  Ingest, Store adapters (SQLite/Postgres), destinations, dashboard, CLI.
-examples/           plain-html and react integrations.
-docs/contract.md    The event contract, documented as the public surface.
+
+The first installer release supports React with Vite and generic ESM browser applications. Ambiguous entry points and route mappings stop for human judgment. See the [skill instructions](./packages/kit/skills/install-calibrate/SKILL.md) for the complete workflow and runtime privacy check.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    A["Browser SDK"] -->|"configured step IDs and lifecycle events"| B["Collector"]
+    B --> C["Closed-schema validation"]
+    C --> D["In-memory state"]
+    C --> E["Optional JSONL persistence"]
+    D --> F["Projector and dashboard"]
+    D --> G["Admin export"]
+    E --> D
 ```
 
-Modules depend only on `@usecalibrate/contract`, never on each other's internals. Storage and destinations sit behind ports so a new backend is one file behind an existing interface.
+The browser SDK cannot start a shared backend. Run the standalone sidecar or mount `createCalibrate()` in an existing Hono app. The browser uses a write key, dashboard reads use a dashboard token, and export or reset operations use an admin token.
 
-## Workshop kit (packages/kit)
+## Privacy and security boundaries
 
-Alongside the autocapture packages, this repo carries `packages/kit`: the vendored Calibrate workshop kit (tracker, in-memory collector, and sidecar) used by the DevRelCon demo. This repo owns it. Downstream repos (the fakesaaspi demo) vendor `packages/kit` via their own `scripts/sync-kit.sh` and must not hand-edit their copy; make kit changes here and land them on `main`.
+Calibrate's data minimization is enforced in both client behavior and collector validation:
 
-The sidecar exposes `POST /admin/reset` (admin-token gated), which clears its in-memory sessions and events. Sidecar deployments lose that state on every deploy or restart anyway, so reset gives operators an explicit, immediate way to start clean.
+- The route observer sends configured step IDs instead of URLs, pathnames, queries, or hashes.
+- The SDK does not read form values, textarea values, clipboard contents, DOM text, arbitrary attributes, or cookies.
+- Events use a closed schema. Unknown fields and invalid identifiers are rejected at ingestion.
+- Browser instrumentation is fault-isolated and does not throw into the host application.
+
+Calibrate does not make browser credentials secret. Treat `WRITE_KEY` and a browser-visible `DASHBOARD_TOKEN` as scoped workshop credentials, restrict `ALLOWED_ORIGINS`, and rotate them when needed. Never expose `ADMIN_TOKEN` in browser code. Calibrate is onboarding telemetry, not user authentication, authorization, or a general-purpose analytics warehouse.
+
+## Deployment
+
+The repository includes a [Render Blueprint](./render.yaml) for the standalone sidecar:
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2Fojusave%2Fusecalibrate)
+
+The Blueprint creates one paid Starter web service, generates the three credentials, requires the manifest and allowed origins, disables previews and automatic deploys, and uses in-memory state by default.
+
+To preserve events across restarts, uncomment `PERSIST_PATH` and the disk block in `render.yaml`. Render persistent disks require a paid service, can attach to only one service instance, and disable zero-downtime deploys. Review [Render's persistent disk documentation](https://render.com/docs/disks) before enabling this option.
+
+You can also run the built sidecar on any Node.js 20 host:
+
+```sh
+node packages/kit/dist/sidecar.js
+```
 
 ## Development
 
-```bash
-npm run build       # build contract, then browser, then collector
-npm test            # run all package tests
-npm run lint        # eslint across the packages
-npm run typecheck   # strict tsc per package
+```sh
+npm ci
+npm run build --workspace usecalibrate
+npm run verify
+npm run smoke:package
 ```
 
-Tests cover the contract validator (including PII rejection), the SQLite and in-memory stores, session reduction and funnel math, and fault isolation (a failing destination must not affect ingestion).
+`npm run verify` runs linting, type checks, tests, package checks, and repository policy checks. `npm run smoke:package` packs `usecalibrate`, installs it into a fresh application, and exercises the installer and package entry points.
+
+The current public package lives in [`packages/kit`](./packages/kit). The other `@usecalibrate/*` directories are internal workspace packages and are not published separately.
 
 ## Current limits
 
-- The dashboard's live view and flow inference are heuristic: the flow is the observed order of distinct routes, correctable with explicit `page()` calls. There is no declared-manifest override yet.
-- Autocapture is browser-only today. Native and server clients can already post to the contract, but there are no client libraries for them yet.
-- `identify()` links sessions by an opaque id you supply. There is no cross-device identity in the core, by design.
+- Calibrate is pre-1.0 and its API may change.
+- The collector is single-process. Multiple instances do not coordinate or share state.
+- State resets after restart or deployment unless optional JSONL persistence is enabled.
+- JSONL persistence requires one instance and replays the file at startup.
+- Browser-visible write and dashboard credentials provide workshop isolation, not end-user authentication.
+- The default collector limits and 24-hour retention target small workshops and evaluations.
+- The agent installer currently supports React/Vite and generic ESM browser applications.
+- The installer CLI is in the repository but not in the current `usecalibrate@0.1.2` npm artifact.
 
 ## License
 
-[Apache-2.0](./LICENSE).
+[Apache-2.0](./LICENSE)

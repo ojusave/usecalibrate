@@ -2,6 +2,7 @@
 
 import { execFileSync } from "node:child_process";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -72,7 +73,13 @@ try {
       `${name} executable is absent from the tarball`,
     );
   }
-  for (const required of ["README.md", "present/index.html"]) {
+  for (const required of [
+    "README.md",
+    "present/index.html",
+    "skills/install-calibrate/SKILL.md",
+    "skills/install-calibrate/agents/openai.yaml",
+    "skills/install-calibrate/references/cli.md",
+  ]) {
     assert(packedFiles.has(required), `${required} is absent from the tarball`);
   }
 
@@ -94,6 +101,39 @@ try {
     ],
     { cwd: consumer },
   );
+
+  const agentFixture = join(consumer, "agent-fixture");
+  mkdirSync(join(agentFixture, "src"), { recursive: true });
+  writeFileSync(
+    join(agentFixture, "package.json"),
+    JSON.stringify({
+      name: "calibrate-agent-fixture",
+      private: true,
+      type: "module",
+      dependencies: { react: "latest" },
+      devDependencies: { vite: "latest" },
+    }),
+  );
+  writeFileSync(join(agentFixture, "package-lock.json"), "{}\n");
+  writeFileSync(
+    join(agentFixture, "src/main.ts"),
+    [
+      "export const routes = [",
+      '  { path: "/signup" },',
+      '  { path: "/projects/new" },',
+      '  { path: "/success" },',
+      "];",
+      "",
+    ].join("\n"),
+  );
+  const calibrateBin = join(consumer, "node_modules/.bin/calibrate");
+  const planFile = join(agentFixture, "calibrate.plan.json");
+  run(calibrateBin, ["detect", "--dir", agentFixture, "--json"], { cwd: agentFixture });
+  run(calibrateBin, ["plan", "--dir", agentFixture, "--out", planFile], { cwd: agentFixture });
+  run(calibrateBin, ["apply", "--plan", planFile, "--yes", "--no-install"], { cwd: agentFixture });
+  run(calibrateBin, ["verify", "--dir", agentFixture, "--json"], { cwd: agentFixture });
+  assert(existsSync(join(agentFixture, "calibrate.install.json")), "agent installer did not create its installation record");
+  assert(readFileSync(join(agentFixture, "src/main.ts"), "utf8").includes("Calibrate instrumentation"), "agent installer did not connect the host entry point");
 
   const browserFixture = join(consumer, "browser-fixture.ts");
   const browserBundle = join(consumer, "browser-bundle.js");
