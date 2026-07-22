@@ -30,7 +30,9 @@ It does not scan the DOM, infer form fields, read input values, capture clipboar
 
 Watch the complete local integration flow, from repository inspection and installer planning through verification, onboarding navigation, and the dashboard view:
 
-<video src="https://github.com/ojusave/usecalibrate/raw/refs/heads/main/docs/videos/calibrate-implementation-walkthrough.mp4" controls muted playsinline width="100%"></video>
+[
+  ![Play the Calibrate implementation walkthrough](./docs/videos/calibrate-implementation-walkthrough.png)
+](./docs/videos/calibrate-implementation-walkthrough.mp4)
 
 [Open the walkthrough video directly](./docs/videos/calibrate-implementation-walkthrough.mp4)
 
