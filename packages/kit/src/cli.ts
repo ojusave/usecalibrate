@@ -186,10 +186,8 @@ async function main(): Promise<void> {
     if (!args.yes) {
       if (args.json || process.stdin.isTTY !== true || process.stdout.isTTY !== true) {
         const blocked = {
-          v: 1,
-          command: "install",
+          ...preparation,
           status: "blocked",
-          targetDir: preparation.targetDir,
           changedFiles: [],
           issues: ["noninteractive installation requires --yes after reviewing the plan"],
         };
@@ -249,9 +247,10 @@ async function main(): Promise<void> {
     return;
   }
   if (args.command === "verify") {
+    const writeKey = args.writeKey ?? process.env.CALIBRATE_WRITE_KEY;
     const result = await verifyInstallation(args.dir, {
       ...(args.endpoint === undefined ? {} : { endpoint: args.endpoint }),
-      ...(args.writeKey === undefined ? {} : { writeKey: args.writeKey }),
+      ...(writeKey === undefined ? {} : { writeKey }),
     });
     print(result);
     process.exitCode = result.status === "verified" ? 0 : 4;

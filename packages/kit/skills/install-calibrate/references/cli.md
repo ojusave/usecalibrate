@@ -10,6 +10,8 @@ npx usecalibrate install --url https://collector.example
 
 The command performs all collector discovery before project writes. It checks `/healthz`, `/api/manifest`, and `/dashboard`, uses the remote manifest exactly, previews the route and file plan, and requests confirmation in an interactive terminal. In a noninteractive environment it exits without writes unless `--yes` is present.
 
+For an agent-readable preview, add `--json` without `--yes`. The command intentionally exits with code `3`, changes no project files, and returns the complete proposed plan including each generated file's `content`. Compare those contents with the current files and show exact diffs before requesting approval.
+
 ```sh
 CALIBRATE_WRITE_KEY=replace-me npx usecalibrate install \
   --url https://collector.example \
@@ -19,7 +21,7 @@ CALIBRATE_WRITE_KEY=replace-me npx usecalibrate install \
   --json
 ```
 
-`CALIBRATE_WRITE_KEY` or `--write-key` enables runtime verification and is never persisted. Without a write key, installation can pass with artifact evidence only. The output includes the dashboard URL and makes the hosting boundary explicit: the SDK is bundled with the app, while the existing collector receives events and serves `/dashboard`.
+`CALIBRATE_WRITE_KEY` enables collector runtime verification and is never persisted. Prefer the environment variable because a `--write-key` argument can remain in shell history or process listings. Without a write key, installation can pass with artifact evidence only. The output includes the dashboard URL and makes the hosting boundary explicit: the SDK is bundled with the app, while the existing collector receives events and serves `/dashboard`.
 
 For agents that need a separately reviewable plan file, use the lower-level commands:
 
@@ -54,14 +56,16 @@ ALLOWED_ORIGINS=http://localhost:5173 \
 npx usecalibrate sidecar --dir .
 ```
 
-Then verify ingestion and privacy rejection:
+Then verify ingestion and privacy rejection without putting the key in a command argument:
 
 ```sh
+CALIBRATE_WRITE_KEY=replace-with-browser-write-key \
 npx usecalibrate verify --dir . \
   --endpoint http://localhost:8787 \
-  --write-key replace-with-browser-write-key \
   --json
 ```
+
+This is collector runtime evidence. To validate the application flow, start the real host application, visit its mapped routes, and confirm that an expected count changes in `/dashboard`.
 
 For React/Vite applications, set `VITE_CALIBRATE_WRITE_KEY` and optionally `VITE_CALIBRATE_ENDPOINT`. Generic ESM applications read `globalThis.CALIBRATE_CONFIG` with `writeKey` and optional `endpoint` fields.
 
@@ -80,3 +84,5 @@ The planner will not modify a custom Calibrate integration that lacks `calibrate
 - `4`: apply or verification failure.
 
 If files change after planning, generate a new plan. Do not force the stale plan over user edits.
+
+If apply or verification fails after files change, preserve the failure and report the changed files. Do not revert user files automatically. Show the failing command or check and ask before any rollback.

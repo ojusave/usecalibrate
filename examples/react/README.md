@@ -1,40 +1,56 @@
-# React example
+# React/Vite example
 
-Install the SDK and start it once, high in your app tree. Autocapture handles routing and
-fields; you only call the manual API for things it cannot see (like a successful API
-response that means the flow shipped).
+This example shows the current position-only `usecalibrate` API. Calibrate records configured step IDs and lifecycle signals. It does not inspect fields, read input values, or infer route meanings.
 
-```bash
-npm install usecalibrate
+For the shortest complete path, follow the repository's [ten-minute local quickstart](../../README.md#ten-minute-local-quickstart). The guided installer generates and imports this integration after showing the proposed changes.
+
+## Manual integration
+
+Install version 0.1.4 or newer:
+
+```sh
+npm install usecalibrate@^0.1.4
 ```
 
-```tsx
-// src/calibrate.ts
-import { calibrate } from "usecalibrate";
+Create `src/calibrate.ts`:
 
-export const fm = calibrate({
-  app: "my-app",
-  endpoint: import.meta.env.VITE_CALIBRATE_ENDPOINT, // e.g. https://collector.example.com
+```ts
+import { calibrate, defineManifest } from "usecalibrate";
+
+const manifest = defineManifest({
+  version: "onboarding-v1",
+  groups: ["signup"],
+  steps: [
+    { id: "account", group: "signup" },
+    { id: "success", group: "signup" }
+  ]
 });
+
+const routes = [
+  { path: "/signup", step: "account" },
+  { path: "/welcome", step: "success", shipped: true }
+] as const;
+
+const writeKey = import.meta.env.VITE_CALIBRATE_WRITE_KEY;
+const endpoint = import.meta.env.VITE_CALIBRATE_ENDPOINT || "http://localhost:8787";
+
+export const calibrateClient = writeKey
+  ? calibrate({ endpoint, manifest, routes, writeKey })
+  : undefined;
 ```
+
+Import it once from the application entry point:
 
 ```tsx
-// src/main.tsx
-import "./calibrate"; // side-effect import starts autocapture once
-
-// ...render your app as usual
+import "./calibrate";
 ```
 
-```tsx
-// Anywhere you know the flow completed:
-import { fm } from "./calibrate";
+Start the application without writing the local key into source:
 
-async function onSubmit() {
-  const res = await createProject();
-  if (res.ok) fm.shipped();
-}
+```sh
+VITE_CALIBRATE_WRITE_KEY=local-browser-write-key npm run dev
 ```
 
-With a client router (React Router, TanStack Router, Next.js app router), Calibrate picks
-up `history.pushState` automatically, so page and flow events appear with no extra code.
-It never reads input values: only that a field was focused, filled, left blank, or errored.
+Visit `/signup`, continue to `/welcome`, then open the collector's `/dashboard` route. Done means the dashboard's reached-step and shipped counts increase.
+
+The collector must already exist. The browser SDK does not start or deploy it.

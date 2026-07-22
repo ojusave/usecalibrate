@@ -225,6 +225,8 @@ try {
     "--no-install",
   ], { cwd: guidedFixture, encoding: "utf8" });
   assert(unapproved.status === 3, "noninteractive guided install did not require --yes");
+  const unapprovedResult = JSON.parse(unapproved.stdout);
+  assert(unapprovedResult.plan?.changes?.every((change) => typeof change.content === "string"), "unapproved guided install did not return reviewable generated contents");
   assert(!existsSync(join(guidedFixture, "calibrate.install.json")), "unapproved guided install changed project files");
 
   const guidedOutput = run(calibrateBin, [
@@ -249,6 +251,23 @@ try {
   for (const file of guidedResult.changedFiles) {
     assert(!readFileSync(join(guidedFixture, file), "utf8").includes(writeKey), `guided installer persisted the write key in ${file}`);
   }
+
+  const verifyOutput = run(calibrateBin, [
+    "verify",
+    "--dir",
+    guidedFixture,
+    "--endpoint",
+    collectorUrl,
+    "--json",
+  ], {
+    cwd: guidedFixture,
+    env: { ...process.env, CALIBRATE_WRITE_KEY: writeKey },
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  const verifyResult = JSON.parse(verifyOutput);
+  assert(verifyResult.status === "verified", "standalone verification did not report verified");
+  assert(verifyResult.evidence === "runtime", "standalone verification did not read CALIBRATE_WRITE_KEY from the environment");
+  assert(!verifyOutput.includes(writeKey), "standalone verification printed the write key");
 
   const browserFixture = join(consumer, "browser-fixture.ts");
   const browserBundle = join(consumer, "browser-bundle.js");

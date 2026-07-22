@@ -14,7 +14,7 @@ DASHBOARD_TOKEN=example-dashboard \
 WRITE_KEY=example-write-key \
 ALLOWED_ORIGINS=http://localhost:8080 \
 MANIFEST_JSON='{"version":"onboarding-demo-v1","groups":["account","workspace","activation"],"steps":[{"id":"account","group":"account"},{"id":"workspace","group":"workspace"},{"id":"complete","group":"activation"}]}' \
-npx --yes --package usecalibrate@0.1.2 calibrate-sidecar
+npx --yes --package usecalibrate@0.1.4 calibrate-sidecar
 ```
 
 Serve the repository from another terminal:
@@ -27,9 +27,9 @@ python3 -m http.server 8080
 Open these URLs:
 
 - Signup: <http://localhost:8080/examples/plain-html/signup.html>
-- Projector dashboard: <http://localhost:8787/present#token=example-dashboard>
+- Interactive dashboard: <http://localhost:8787/dashboard#token=example-dashboard>
 
-Move through the three screens, then select **View onboarding data**. The dashboard polls `GET /api/dashboard` once per second and shows starts, completions, the funnel, timing, and recent event names.
+Move through the three screens, then select **View onboarding data**. Done means the dashboard's started and shipped counts increase. The dashboard polls `GET /api/dashboard` once per second and shows starts, completions, the funnel, timing, and recent event names.
 
 The browser tracker sends batches to `POST http://localhost:8787/api/events`. The sidecar validates and reduces those events in memory. Set `PERSIST_PATH` when you need sessions to survive a restart.
 

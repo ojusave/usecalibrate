@@ -6,23 +6,90 @@
 [Sign up on Render](https://dashboard.render.com/register?utm_source=github&utm_medium=referral&utm_campaign=ojus_demos&utm_content=hero_cta) |
 [GitHub repository](https://github.com/ojusave/usecalibrate)
 
-## Installation
+## Before you start
 
-Install the package from npm:
+- Browser use needs an ESM-aware bundler or runtime. The installer, server, and sidecar require Node.js 20 or newer.
+- Calibrate needs a collector. Use the standalone sidecar, mount the embedded Hono collector, or connect to one that is already running.
+- A first integration needs at least two fixed onboarding routes and exactly one route that means shipped.
+- The sidecar needs distinct `WRITE_KEY`, `DASHBOARD_TOKEN`, and `ADMIN_TOKEN` values. Never put `ADMIN_TOKEN` in browser code.
+- Sidecar data is in memory by default and resets when the process restarts.
+
+## Choose one path
+
+| Starting point | Start here |
+|---|---|
+| No collector yet | [Ten-minute React/Vite quickstart](#ten-minute-reactvite-quickstart) |
+| Existing Calibrate collector | [Guided installation](#guided-installation) |
+| Existing Hono server | [Embedded Hono collector](#embedded-hono-collector) |
+| Coding agent will integrate it | [Install with an AI coding agent](#install-with-an-ai-coding-agent) |
+
+## Ten-minute React/Vite quickstart
+
+This example assumes the application already has `/signup` and `/welcome` routes.
+
+### 1. Install and confirm the package
 
 ```sh
-npm install usecalibrate
+npm install usecalibrate@^0.1.4
+npm ls usecalibrate --depth=0
 ```
 
-Browser use needs an ESM-aware bundler or runtime. The server and sidecar require Node.js 20 or newer.
+Expected: `usecalibrate@0.1.4` or newer. The guided `install` command is unavailable in older releases.
 
-If a Calibrate collector is already running, use the guided installer:
+### 2. Start the collector in terminal 1
 
 ```sh
+ADMIN_TOKEN=local-admin-only \
+DASHBOARD_TOKEN=local-dashboard-only \
+WRITE_KEY=local-browser-write-key \
+ALLOWED_ORIGINS=http://localhost:5173 \
+MANIFEST_JSON='{"version":"onboarding-v1","groups":["signup"],"steps":[{"id":"account","group":"signup"},{"id":"success","group":"signup"}]}' \
+npx calibrate-sidecar
+```
+
+Expected output begins with `calibrate sidecar listening on`. Leave terminal 1 running.
+
+### 3. Confirm health in terminal 2
+
+```sh
+curl -s http://localhost:8787/healthz
+```
+
+Expected: `{"ok":true}`.
+
+### 4. Preview and apply the integration
+
+From the application directory in terminal 2:
+
+```sh
+npx usecalibrate install \
+  --url http://localhost:8787 \
+  --route /signup=account \
+  --route /welcome=success:shipped
+```
+
+Review the route meanings, file changes, dependency command, and required environment names. Enter `y` only when they are correct. Expected after approval: `Calibrate install: installed` and `Evidence: artifact`.
+
+### 5. Prove the browser path in terminal 3
+
+```sh
+VITE_CALIBRATE_WRITE_KEY=local-browser-write-key npm run dev
+```
+
+Open `/signup`, continue to `/welcome`, then open `http://localhost:8787/dashboard#token=local-dashboard-only`.
+
+Done means the dashboard shows the `account` step was reached and the shipped count increased. A static installer result or passing build alone does not prove the browser path works.
+
+## Guided installation
+
+If a Calibrate collector is already running:
+
+```sh
+npm install usecalibrate@^0.1.4
 npx usecalibrate install --url https://collector.example
 ```
 
-It verifies `/healthz`, loads the collector's authoritative `/api/manifest`, confirms `/dashboard`, previews the route mapping and file changes, then asks before writing. It supports React/Vite and generic ESM browser applications with one detectable entry point. Add explicit routes when inference is ambiguous:
+The installer verifies `/healthz`, loads the collector's authoritative `/api/manifest`, confirms `/dashboard`, previews route mappings and file changes, then asks before writing. It supports React/Vite and generic ESM browser applications with one detectable entry point. Add explicit routes when inference is ambiguous:
 
 ```sh
 npx usecalibrate install \
@@ -31,11 +98,23 @@ npx usecalibrate install \
   --route /success=success:shipped
 ```
 
-For noninteractive use, add `--yes --json`. Set `CALIBRATE_WRITE_KEY` to run a synthetic ingestion and privacy-rejection check. The key is not persisted or included in command output. Without the key, a successful command reports `evidence: "artifact"` instead of claiming runtime verification.
+For noninteractive use, add `--yes --json`. Set `CALIBRATE_WRITE_KEY` in the environment to run a synthetic ingestion and privacy-rejection check. The key is not persisted or included in command output. Without it, a successful command reports `evidence: "artifact"`.
+
+Synthetic runtime verification proves collector ingestion and privacy rejection. It does not prove that the real application loaded the SDK or emitted browser events. Start the application, visit its mapped routes, and confirm a dashboard count changes before reporting the application flow as validated.
 
 The package does not provision or host the collector. The SDK is bundled into the host application. The existing collector receives data and serves the interactive UI at `<collector-url>/dashboard`.
 
-### Install with an AI coding agent
+## Common first-use failures
+
+| Symptom | Next action |
+|---|---|
+| `unknown option` or the `install` command is missing | Run `npm ls usecalibrate --depth=0`; guided installation requires 0.1.4 or newer. |
+| `/healthz` cannot be reached | Fix the collector's first startup error before continuing. |
+| Installer exits with code `3` | Resolve the reported route, entry-point, or support decision. Project files should remain unchanged. |
+| The app runs but dashboard counts do not change | Confirm the browser write key, exact route paths, collector URL, and `ALLOWED_ORIGINS`. |
+| The dashboard reports unauthorized | Use `DASHBOARD_TOKEN`, not `WRITE_KEY` or `ADMIN_TOKEN`, in the dashboard URL fragment. |
+
+## Install with an AI coding agent
 
 The package ships a portable Agent Skill at `skills/install-calibrate`. Install that directory in your agent's skill location, then ask:
 
@@ -44,15 +123,21 @@ The package ships a portable Agent Skill at `skills/install-calibrate`. Install 
 The skill drives a plan-before-write CLI:
 
 ```sh
+npx usecalibrate install --url https://collector.example --json
+# Review the returned plan and exact generated contents. No files changed.
+npx usecalibrate install --url https://collector.example --yes --json
+# Or use the lower-level workflow:
 npx usecalibrate detect --dir . --json
 npx usecalibrate plan --dir . --out calibrate.plan.json
 npx usecalibrate apply --plan calibrate.plan.json --yes
 npx usecalibrate verify --dir . --json
 ```
 
-V1 supports React/Vite and generic ESM browser applications. The planner proposes fixed route identifiers but requires review before applying them. Runtime verification can send a synthetic completed journey to a local sidecar and confirm that an event carrying an unknown content field is rejected.
+V1 supports React/Vite and generic ESM browser applications. The planner proposes fixed route identifiers but requires review before applying them. Collector runtime verification can send a synthetic completed journey to a local sidecar and confirm that an event carrying an unknown content field is rejected. It does not validate the real browser path.
 
-To build and pack it from a repository checkout instead:
+## Build from source
+
+To build and pack the package from a repository checkout:
 
 ```sh
 cd usecalibrate
