@@ -45,7 +45,7 @@ npm pack --workspace usecalibrate
 Install the resulting tarball in another project:
 
 ```sh
-npm install /path/to/usecalibrate-0.1.3.tgz
+npm install /path/to/usecalibrate-0.1.4.tgz
 ```
 
 ## Browser quickstart
