@@ -30,7 +30,9 @@ It does not scan the DOM, infer form fields, read input values, capture clipboar
 
 Watch the complete local integration flow, from repository inspection and installer planning through verification, onboarding navigation, and the dashboard view:
 
-[![Watch the Calibrate implementation walkthrough](https://img.shields.io/badge/watch-implementation%20walkthrough-72e6c2?style=for-the-badge)](./docs/videos/calibrate-implementation-walkthrough.mp4)
+<video src="https://github.com/ojusave/usecalibrate/raw/refs/heads/main/docs/videos/calibrate-implementation-walkthrough.mp4" controls muted playsinline width="100%"></video>
+
+[Open the walkthrough video directly](./docs/videos/calibrate-implementation-walkthrough.mp4)
 
 The video is a local storyboard render. Replace it with a capture containing the actual terminal, browser, and dashboard session before using it as proof of a live run.
 
