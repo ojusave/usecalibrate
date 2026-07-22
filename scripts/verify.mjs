@@ -52,7 +52,7 @@ function grepForbidden(label, pattern, directory) {
   console.log("ok");
 }
 
-console.log("calibrate verify (Prompt 1)");
+console.log("calibrate verification");
 run("lint", "npm run lint");
 run("contract build", "npm run build -w @usecalibrate/contract");
 run("typecheck", "npm run typecheck");
@@ -75,4 +75,4 @@ if (gzipBytes >= 10_240) {
   process.exit(1);
 }
 
-console.log("\nverify: ok (Prompt 1)");
+console.log("\nverify: ok");
