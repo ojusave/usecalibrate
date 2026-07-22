@@ -36,12 +36,15 @@ function grepForbidden(label, pattern, directory) {
   console.log(`\n==> ${label}`);
   const hits = [];
   for (const file of walk(directory)) {
-    let content;
+    let bytes;
     try {
-      content = readFileSync(file, "utf8");
+      bytes = readFileSync(file);
     } catch {
       continue;
     }
+    if (bytes.includes(0)) continue;
+    const content = bytes.toString("utf8");
+    if (content.includes("\uFFFD")) continue;
     if (pattern.test(content)) hits.push(relative(root, file));
     pattern.lastIndex = 0;
   }

@@ -16,6 +16,25 @@ npm install usecalibrate
 
 Browser use needs an ESM-aware bundler or runtime. The server and sidecar require Node.js 20 or newer.
 
+If a Calibrate collector is already running, use the guided installer:
+
+```sh
+npx usecalibrate install --url https://collector.example
+```
+
+It verifies `/healthz`, loads the collector's authoritative `/api/manifest`, confirms `/dashboard`, previews the route mapping and file changes, then asks before writing. It supports React/Vite and generic ESM browser applications with one detectable entry point. Add explicit routes when inference is ambiguous:
+
+```sh
+npx usecalibrate install \
+  --url https://collector.example \
+  --route /signup=account \
+  --route /success=success:shipped
+```
+
+For noninteractive use, add `--yes --json`. Set `CALIBRATE_WRITE_KEY` to run a synthetic ingestion and privacy-rejection check. The key is not persisted or included in command output. Without the key, a successful command reports `evidence: "artifact"` instead of claiming runtime verification.
+
+The package does not provision or host the collector. The SDK is bundled into the host application. The existing collector receives data and serves the interactive UI at `<collector-url>/dashboard`.
+
 ### Install with an AI coding agent
 
 The package ships a portable Agent Skill at `skills/install-calibrate`. Install that directory in your agent's skill location, then ask:

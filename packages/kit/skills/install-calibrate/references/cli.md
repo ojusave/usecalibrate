@@ -2,6 +2,27 @@
 
 ## Commands
 
+For a human-friendly installation against an existing collector:
+
+```sh
+npx usecalibrate install --url https://collector.example
+```
+
+The command performs all collector discovery before project writes. It checks `/healthz`, `/api/manifest`, and `/dashboard`, uses the remote manifest exactly, previews the route and file plan, and requests confirmation in an interactive terminal. In a noninteractive environment it exits without writes unless `--yes` is present.
+
+```sh
+CALIBRATE_WRITE_KEY=replace-me npx usecalibrate install \
+  --url https://collector.example \
+  --route /signup=account \
+  --route /success=success:shipped \
+  --yes \
+  --json
+```
+
+`CALIBRATE_WRITE_KEY` or `--write-key` enables runtime verification and is never persisted. Without a write key, installation can pass with artifact evidence only. The output includes the dashboard URL and makes the hosting boundary explicit: the SDK is bundled with the app, while the existing collector receives events and serves `/dashboard`.
+
+For agents that need a separately reviewable plan file, use the lower-level commands:
+
 ```sh
 npx usecalibrate detect --dir . --json
 npx usecalibrate plan --dir . --out calibrate.plan.json
@@ -54,7 +75,7 @@ The planner will not modify a custom Calibrate integration that lacks `calibrate
 
 - `0`: command completed at its declared evidence level.
 - `1`: unexpected execution error.
-- `2`: invalid arguments or missing write approval.
+- `2`: invalid arguments.
 - `3`: blocked or needs human judgment.
 - `4`: apply or verification failure.
 

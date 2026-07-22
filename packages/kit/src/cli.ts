@@ -1,12 +1,17 @@
 #!/usr/bin/env node
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { createInterface } from "node:readline/promises";
 import {
   applyInstallPlan,
+  completeGuidedInstall,
   detectProject,
   planInstall,
+  prepareGuidedInstall,
   sidecarManifest,
   verifyInstallation,
+  type GuidedInstallPreparation,
+  type GuidedInstallResult,
   type InstallPlan,
 } from "./installer.js";
 import type { CalibrateRoute } from "./route-observer.js";
@@ -16,11 +21,13 @@ interface ParsedArguments {
   dir: string;
   plan?: string;
   out?: string;
+  url?: string;
   endpoint?: string;
   writeKey?: string;
   routes: CalibrateRoute[];
   yes: boolean;
   install: boolean;
+  json: boolean;
 }
 
 function fail(message: string, code = 2): never {
@@ -53,18 +60,20 @@ function parseArguments(argv: string[]): ParsedArguments {
     routes: [],
     yes: false,
     install: true,
+    json: false,
   };
   for (let index = 1; index < argv.length; index += 1) {
     const flag = argv[index];
     if (flag === "--dir") parsed.dir = valueAfter(argv, index++, flag);
     else if (flag === "--plan") parsed.plan = valueAfter(argv, index++, flag);
     else if (flag === "--out") parsed.out = valueAfter(argv, index++, flag);
+    else if (flag === "--url") parsed.url = valueAfter(argv, index++, flag);
     else if (flag === "--endpoint") parsed.endpoint = valueAfter(argv, index++, flag);
     else if (flag === "--write-key") parsed.writeKey = valueAfter(argv, index++, flag);
     else if (flag === "--route") parsed.routes.push(parseRoute(valueAfter(argv, index++, flag)));
     else if (flag === "--yes" || flag === "-y") parsed.yes = true;
     else if (flag === "--no-install") parsed.install = false;
-    else if (flag === "--json") continue;
+    else if (flag === "--json") parsed.json = true;
     else fail(`unknown option ${flag ?? ""}`);
   }
   parsed.dir = resolve(parsed.dir);
@@ -92,10 +101,51 @@ function planSummary(plan: InstallPlan, planFile?: string): unknown {
   };
 }
 
+function installPreview(preparation: GuidedInstallPreparation): void {
+  const plan = preparation.plan;
+  process.stdout.write([
+    "Calibrate installation plan",
+    `Collector: ${preparation.collector.endpoint ?? "unavailable"}`,
+    `Dashboard: ${preparation.collector.dashboardUrl ?? "unavailable"}`,
+    `Manifest: ${preparation.collector.manifest?.version ?? "unavailable"}`,
+    "Routes:",
+    ...(plan?.configuration?.routes.map((route) =>
+      `  ${route.path} -> ${route.step}${route.shipped === true ? " (shipped)" : ""}`
+    ) ?? ["  none"]),
+    "File changes:",
+    ...(plan?.changes.map((change) => `  ${change.action}: ${change.path}`) ?? ["  none"]),
+    `Dependency install: ${plan?.installCommand?.join(" ") ?? "none"}`,
+    `Required environment names: ${plan?.requiredEnvironment.join(", ") || "none"}`,
+    "Hosting: the SDK is bundled with this application; the collector and its /dashboard route remain hosted at the collector URL.",
+    "",
+  ].join("\n"));
+}
+
+function installText(result: GuidedInstallResult): void {
+  const verification = result.status !== "installed"
+    ? result.evidence === "none"
+      ? "Verification did not run."
+      : `${result.evidence === "runtime" ? "Runtime" : "Static"} verification did not complete successfully.`
+    : result.evidence === "runtime"
+      ? "Runtime verification passed with a synthetic privacy-safe journey."
+      : "Static installation verification passed. Runtime verification was skipped because CALIBRATE_WRITE_KEY was not supplied.";
+  process.stdout.write([
+    `Calibrate install: ${result.status}`,
+    `Evidence: ${result.evidence}`,
+    result.dashboardUrl === null ? "Dashboard: unavailable" : `Dashboard: ${result.dashboardUrl}`,
+    verification,
+    `Changed files: ${result.changedFiles.join(", ") || "none"}`,
+    ...(result.issues.length === 0 ? [] : ["Issues:", ...result.issues.map((issue) => `  ${issue}`)]),
+    "Hosting: the SDK ships with your app. The collector stores the data and serves the dashboard.",
+    "",
+  ].join("\n"));
+}
+
 function help(): void {
   process.stdout.write([
-    "Calibrate agent installer",
+    "Calibrate installer",
     "",
+    "calibrate install --url https://collector.example [--route /signup=account] [--route /success=success:shipped] [--yes] [--json]",
     "calibrate detect --dir . --json",
     "calibrate plan --dir . [--route /signup=account] [--route /success=success:shipped] --out calibrate.plan.json",
     "calibrate apply --plan calibrate.plan.json --yes [--no-install]",
@@ -109,6 +159,64 @@ async function main(): Promise<void> {
   const args = parseArguments(process.argv.slice(2));
   if (args.command === "help" || args.command === "--help" || args.command === "-h") {
     help();
+    return;
+  }
+  if (args.command === "install") {
+    if (args.url === undefined) fail("install requires --url");
+    const preparation = await prepareGuidedInstall(
+      args.dir,
+      args.url,
+      args.routes.length === 0 ? undefined : args.routes,
+    );
+    if (preparation.status !== "ready") {
+      if (args.json) print(preparation);
+      else {
+        installPreview(preparation);
+        for (const issue of [
+          ...preparation.collector.issues,
+          ...(preparation.plan?.issues ?? []),
+          ...(preparation.plan?.decisions ?? []),
+        ]) process.stderr.write(`Blocked: ${issue}\n`);
+      }
+      process.exitCode = 3;
+      return;
+    }
+
+    if (!args.json) installPreview(preparation);
+    if (!args.yes) {
+      if (args.json || process.stdin.isTTY !== true || process.stdout.isTTY !== true) {
+        const blocked = {
+          v: 1,
+          command: "install",
+          status: "blocked",
+          targetDir: preparation.targetDir,
+          changedFiles: [],
+          issues: ["noninteractive installation requires --yes after reviewing the plan"],
+        };
+        if (args.json) print(blocked);
+        else process.stderr.write("Blocked: noninteractive installation requires --yes after reviewing the plan.\n");
+        process.exitCode = 3;
+        return;
+      }
+      const prompt = createInterface({ input: process.stdin, output: process.stdout });
+      const answer = await prompt.question("Apply this plan? [y/N] ");
+      prompt.close();
+      if (!/^(?:y|yes)$/i.test(answer.trim())) {
+        process.stdout.write("No files changed.\n");
+        process.exitCode = 3;
+        return;
+      }
+    }
+
+    const writeKey = args.writeKey ?? process.env.CALIBRATE_WRITE_KEY;
+    const result = await completeGuidedInstall(preparation, {
+      install: args.install,
+      quiet: args.json,
+      ...(writeKey === undefined ? {} : { writeKey }),
+    });
+    if (args.json) print(result);
+    else installText(result);
+    process.exitCode = result.status === "installed" ? 0 : 4;
     return;
   }
   if (args.command === "detect") {

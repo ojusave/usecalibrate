@@ -1,8 +1,12 @@
 import { createCalibrate } from "../src/server.js";
 import {
   applyInstallPlan,
+  completeGuidedInstall,
   detectProject,
+  discoverCollector,
+  normalizeCollectorUrl,
   planInstall,
+  prepareGuidedInstall,
   verifyInstallation,
 } from "../src/installer.js";
 import {
@@ -17,6 +21,15 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const temporaryDirectories: string[] = [];
+const remoteManifest = {
+  version: "remote-onboarding-v2",
+  groups: ["onboarding"],
+  steps: [
+    { id: "signup", group: "onboarding", label: "Create account" },
+    { id: "new", group: "onboarding", label: "Create project" },
+    { id: "success", group: "onboarding", label: "First success" },
+  ],
+};
 
 function temporaryApp(name: string): string {
   const directory = mkdtempSync(join(tmpdir(), `calibrate-${name}-`));
@@ -52,6 +65,182 @@ afterEach(() => {
 });
 
 describe("agent installer", () => {
+  it("normalizes collector URLs without accepting credentials or URL state", () => {
+    expect(normalizeCollectorUrl("https://collector.example/team/")).toBe("https://collector.example/team");
+    expect(() => normalizeCollectorUrl("collector.example")).toThrow("absolute");
+    expect(() => normalizeCollectorUrl("ftp://collector.example")).toThrow("http or https");
+    expect(() => normalizeCollectorUrl("https://user:secret@collector.example")).toThrow("credentials");
+    expect(() => normalizeCollectorUrl("https://collector.example?token=secret")).toThrow("query or fragment");
+  });
+
+  it("discovers health, the authoritative manifest, and the dashboard", async () => {
+    const server = createCalibrate({
+      manifest: remoteManifest,
+      adminToken: "admin",
+      dashboardToken: "dashboard",
+      writeKey: "write-key",
+    });
+    vi.stubGlobal("fetch", (input: string | URL | Request, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(String(input), init);
+      return server.routes.request(request);
+    });
+
+    const discovery = await discoverCollector("http://collector.test/");
+    expect(discovery).toMatchObject({
+      status: "ready",
+      endpoint: "http://collector.test",
+      dashboardUrl: "http://collector.test/dashboard",
+      manifest: remoteManifest,
+    });
+    expect(discovery.checks.every((check) => check.ok)).toBe(true);
+  });
+
+  it("blocks incompatible manifests and missing dashboard routes", async () => {
+    vi.stubGlobal("fetch", async (input: string | URL | Request) => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/healthz") return Response.json({ ok: true });
+      if (path === "/api/manifest") return Response.json({ version: "invalid", groups: [], steps: [] });
+      throw new Error(`unexpected path ${path}`);
+    });
+    const incompatible = await discoverCollector("http://collector.test");
+    expect(incompatible).toMatchObject({
+      status: "blocked",
+      manifest: null,
+      issues: ["collector manifest is invalid"],
+    });
+
+    vi.stubGlobal("fetch", async (input: string | URL | Request) => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/healthz") return Response.json({ ok: true });
+      if (path === "/api/manifest") return Response.json(remoteManifest);
+      return new Response("missing", { status: 404, headers: { "content-type": "text/plain" } });
+    });
+    const dashboardMissing = await discoverCollector("http://collector.test");
+    expect(dashboardMissing).toMatchObject({
+      status: "blocked",
+      manifest: null,
+      issues: ["collector dashboard is unavailable"],
+    });
+  });
+
+  it("blocks before project writes when collector discovery fails", async () => {
+    const directory = temporaryApp("discovery-failure");
+    writeReactViteApp(directory);
+    const beforePackage = readFileSync(join(directory, "package.json"), "utf8");
+    const beforeEntry = readFileSync(join(directory, "src/main.ts"), "utf8");
+    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("collector unavailable"); }));
+
+    const preparation = await prepareGuidedInstall(directory, "http://collector.test");
+    expect(preparation).toMatchObject({ status: "blocked", plan: null });
+    expect(readFileSync(join(directory, "package.json"), "utf8")).toBe(beforePackage);
+    expect(readFileSync(join(directory, "src/main.ts"), "utf8")).toBe(beforeEntry);
+  });
+
+  it("uses the remote manifest exactly and stops on route ambiguity", async () => {
+    const directory = temporaryApp("remote-manifest");
+    writeReactViteApp(directory);
+    const server = createCalibrate({
+      manifest: remoteManifest,
+      adminToken: "admin",
+      dashboardToken: "dashboard",
+      writeKey: "write-key",
+    });
+    vi.stubGlobal("fetch", (input: string | URL | Request, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(String(input), init);
+      return server.routes.request(request);
+    });
+
+    const ready = await prepareGuidedInstall(directory, "http://collector.test");
+    expect(ready.status).toBe("ready");
+    expect(ready.plan?.configuration?.manifest).toEqual(remoteManifest);
+
+    const mismatch = await prepareGuidedInstall(directory, "http://collector.test", [
+      { path: "/signup", step: "not-in-manifest" },
+      { path: "/success", step: "success", shipped: true },
+    ]);
+    expect(mismatch).toMatchObject({
+      status: "needs_human_judgment",
+      plan: { changes: [], issues: [expect.stringContaining("unknown step")] },
+    });
+
+    const missingShipped = await prepareGuidedInstall(directory, "http://collector.test", [
+      { path: "/signup", step: "signup" },
+      { path: "/success", step: "success" },
+    ]);
+    expect(missingShipped).toMatchObject({
+      status: "needs_human_judgment",
+      plan: { changes: [], issues: [expect.stringContaining("exactly one shipped route")] },
+    });
+  });
+
+  it("completes static and runtime guided installs without persisting the write key", async () => {
+    const server = createCalibrate({
+      manifest: remoteManifest,
+      adminToken: "admin",
+      dashboardToken: "dashboard",
+      writeKey: "top-secret-write-key",
+    });
+    vi.stubGlobal("fetch", (input: string | URL | Request, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(String(input), init);
+      return server.routes.request(request);
+    });
+
+    const staticDirectory = temporaryApp("guided-static");
+    writeReactViteApp(staticDirectory);
+    const staticPreparation = await prepareGuidedInstall(staticDirectory, "http://collector.test");
+    const staticResult = await completeGuidedInstall(staticPreparation, { install: false });
+    expect(staticResult).toMatchObject({ status: "installed", evidence: "artifact" });
+
+    const runtimeDirectory = temporaryApp("guided-runtime");
+    writeReactViteApp(runtimeDirectory);
+    const runtimePreparation = await prepareGuidedInstall(runtimeDirectory, "http://collector.test");
+    const runtimeResult = await completeGuidedInstall(runtimePreparation, {
+      install: false,
+      writeKey: "top-secret-write-key",
+    });
+    expect(runtimeResult).toMatchObject({ status: "installed", evidence: "runtime" });
+    expect(runtimeResult.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "synthetic-journey", ok: true }),
+      expect.objectContaining({ name: "privacy-rejection", ok: true }),
+    ]));
+    expect(JSON.stringify(runtimeResult)).not.toContain("top-secret-write-key");
+    for (const file of runtimeResult.changedFiles) {
+      expect(readFileSync(join(runtimeDirectory, file), "utf8")).not.toContain("top-secret-write-key");
+    }
+  });
+
+  it("reports partial after files change when runtime verification fails", async () => {
+    const directory = temporaryApp("guided-partial");
+    writeReactViteApp(directory);
+    const server = createCalibrate({
+      manifest: remoteManifest,
+      adminToken: "admin",
+      dashboardToken: "dashboard",
+      writeKey: "write-key",
+    });
+    let failRuntime = false;
+    vi.stubGlobal("fetch", (input: string | URL | Request, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(String(input), init);
+      if (failRuntime && new URL(request.url).pathname === "/healthz") {
+        throw new Error("collector stopped after planning");
+      }
+      return server.routes.request(request);
+    });
+
+    const preparation = await prepareGuidedInstall(directory, "http://collector.test");
+    failRuntime = true;
+    const result = await completeGuidedInstall(preparation, {
+      install: false,
+      writeKey: "write-key",
+    });
+    expect(result).toMatchObject({ status: "partial", evidence: "runtime" });
+    expect(result.changedFiles.length).toBeGreaterThan(0);
+    expect(result.checks).toContainEqual(expect.objectContaining({
+      name: "collector-health",
+      ok: false,
+    }));
+  });
+
   it("detects, plans, applies, and statically verifies a React/Vite app", async () => {
     const directory = temporaryApp("vite");
     writeReactViteApp(directory);
